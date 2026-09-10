@@ -1,0 +1,5 @@
+{% extends 'base.html' %}{% block title %}{{doc.title}}{% endblock %}{% block content %}
+<div class="policyhead"><div><h1>{{doc.title}}</h1><p class="muted">버전 {{doc.version}} · 최종 수정 {{doc.updated_at}}</p></div></div>
+<div class="panel policytext">{{doc.content}}</div>
+{% if cancellation_policy %}<div class="panel policyextra"><h2>현재 취소·환불 규정</h2><p>{{cancellation_policy}}</p><p class="muted">실제 주문에는 주문 접수 당시 적용된 규정이 동의 기록에 함께 저장됩니다.</p></div>{% endif %}
+{% endblock %}

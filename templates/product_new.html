@@ -1,0 +1,17 @@
+{% extends 'base.html' %}{% block title %}상품등록{% endblock %}{% block content %}
+<div class="pagehead"><div><h1>상품등록</h1><p class="muted">상품 기본정보, 사진, 구성품과 대여 안내를 등록합니다.</p></div><a class="button ghost" href="{{url_for('products_admin')}}">상품목록</a></div>
+<form method="post" enctype="multipart/form-data" class="panel formgrid">
+<label>상품명<input name="name" required autofocus></label>
+<label>카테고리<input name="category" list="catlist" required><datalist id="catlist">{% for c in categories %}<option value="{{c}}">{% endfor %}</datalist></label>
+<label>기본 1일 대여료<input type="number" name="daily_price" value="15000" min="0"></label>
+<label>추가 1일 대여료<input type="number" name="extra_daily_price" value="5000" min="0"><small class="muted">2일째부터 하루 추가될 때마다 부과</small></label>
+<label>보증금<input type="number" name="deposit" value="{{default_deposit}}" min="0"></label>
+<label>사이즈 / 초기재고<input name="sizes" placeholder="예: S:2, M:3, L:2"></label>
+<label>대표 이미지<input type="file" name="image" accept="image/*"></label>
+<label class="full">추가 상품사진<input type="file" name="gallery_images" accept="image/*" multiple><small class="muted">여러 장을 한 번에 선택할 수 있습니다.</small></label>
+<label class="full">상품 설명<textarea name="description" rows="5" placeholder="상품의 특징과 컨셉을 입력하세요."></textarea></label>
+<label class="full">구성품<textarea name="components" rows="4" placeholder="예: 로브, 허리끈, 모자 / 가발은 별도"></textarea></label>
+<label class="full">사이즈 안내<textarea name="size_guide" rows="4" placeholder="예: M 가슴 90~96cm / 총장 125cm"></textarea></label>
+<label class="full">대여 시 주의사항<textarea name="rental_notes" rows="5" placeholder="오염, 분실, 세탁, 반납 시 주의사항 등을 입력하세요."></textarea></label>
+<div class="full formbuttons"><button>상품 등록</button><a class="button ghost" href="{{url_for('products_admin')}}">취소</a></div>
+</form>{% endblock %}

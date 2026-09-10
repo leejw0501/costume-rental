@@ -1,0 +1,16 @@
+{% extends 'base.html' %}{% block title %}관리자 로그인{% endblock %}{% block content %}
+<div class="authwrap">
+  <div class="authcard">
+    <div class="authicon">🔒</div>
+    <h1>관리자 로그인</h1>
+    <p class="muted">상품·주문·고객·정산 관리 화면은 관리자만 접근할 수 있습니다.</p>
+    <form method="post" class="authform">
+      <input type="hidden" name="next" value="{{next_url}}">
+      <label>관리자 아이디<input name="username" value="{{username}}" autocomplete="username" required autofocus></label>
+      <label>비밀번호<input type="password" name="password" autocomplete="current-password" required></label>
+      <button type="submit" class="authsubmit">로그인</button>
+    </form>
+    <div class="firstlogin"><b>최초 실행 기본계정</b><br>아이디 <code>admin</code> / 비밀번호 <code>admin1234</code><br><span>처음 로그인하면 새 비밀번호로 변경해야 관리자 화면을 사용할 수 있습니다.</span></div>
+  </div>
+</div>
+{% endblock %}

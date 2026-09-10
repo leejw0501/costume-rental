@@ -1,0 +1,13 @@
+{% extends 'base.html' %}{% block title %}정산관리{% endblock %}{% block content %}
+<div class="pagehead"><div><h1>정산관리</h1><p class="muted">보증금 환급대기, 추가청구, 전액차감 건을 한 곳에서 관리합니다.</p></div></div>
+<div class="taskstats settlementstats">
+<a class="taskcard" href="{{url_for('settlements_admin',status='pending')}}"><span>정산 대기</span><b>{{summary.pending_count}}건</b><small>미정산·환급예정·부분환급</small></a>
+<a class="taskcard" href="{{url_for('settlements_admin',status='refund')}}"><span>환급 예정금액</span><b>{{'{:,}'.format(summary.refund_due)}}원</b><small>환급예정·부분환급</small></a>
+<a class="taskcard warning" href="{{url_for('settlements_admin',status='charge')}}"><span>추가 청구</span><b>{{'{:,}'.format(summary.additional_due)}}원</b><small>추가청구액 합계</small></a>
+<a class="taskcard" href="{{url_for('settlements_admin',status='all')}}"><span>누적 차감액</span><b>{{'{:,}'.format(summary.deduction_total)}}원</b><small>파손·분실 차감 합계</small></a>
+</div>
+<form class="filterbar" method="get"><input type="search" name="q" value="{{q}}" placeholder="주문번호, 고객, 전화번호, 상품명"><select name="status"><option value="all" {% if status=='all' %}selected{% endif %}>전체</option><option value="pending" {% if status=='pending' %}selected{% endif %}>정산대기</option><option value="refund" {% if status=='refund' %}selected{% endif %}>환급대기</option><option value="charge" {% if status=='charge' %}selected{% endif %}>추가청구</option><option value="deducted" {% if status=='deducted' %}selected{% endif %}>전액차감</option><option value="done" {% if status=='done' %}selected{% endif %}>환급완료</option></select><button>검색</button></form>
+<div class="tablewrap"><table><thead><tr><th>주문</th><th>고객</th><th>상품</th><th>보증금</th><th>차감</th><th>환급액</th><th>추가청구</th><th>상태</th><th>품목</th></tr></thead><tbody>
+{% for r in rows %}<tr><td><a href="{{url_for('reservation_detail',rid=r.id)}}"><b>{{r.order_no}}</b></a><br><span class="muted">{{r.end_date}}</span></td><td>{{r.customer_name}}<br><span class="muted">{{r.phone}}</span></td><td>{{r.name}} / {{r.size_name}} × {{r.qty}}</td><td>{{'{:,}'.format(r.deposit_received or r.deposit_total)}}원</td><td>{{'{:,}'.format(r.damage_deduction or 0)}}원</td><td>{{'{:,}'.format(r.refund_amount or 0)}}원</td><td>{% if r.additional_charge %}<b class="textdanger">{{'{:,}'.format(r.additional_charge)}}원</b>{% else %}-{% endif %}</td><td><span class="badge">{{r.refund_status}}</span></td><td>{{r.damage_item_count}}개</td></tr>{% else %}<tr><td colspan="9" class="empty">조건에 맞는 정산 건이 없습니다.</td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}

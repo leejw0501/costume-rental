@@ -1,0 +1,13 @@
+{% extends 'base.html' %}{% block title %}결제 연동 설정{% endblock %}{% block content %}
+<div class="pagehead"><div><span class="eyebrow">TOSS PAYMENTS V3.3</span><h1>결제 연동 설정</h1><p class="muted">실제 돈이 빠져나가지 않는 토스페이먼츠 테스트 키만 사용합니다.</p></div></div>
+<form class="panel formgrid" method="post" autocomplete="off">
+<div class="full"><h2>결제 모드</h2></div>
+<label class="full">사용 모드<select name="payment_provider_mode"><option value="MOCK" {% if config.mode=='MOCK' %}selected{% endif %}>시뮬레이션 모드</option><option value="TOSS_TEST" {% if config.mode=='TOSS_TEST' %}selected{% endif %}>토스페이먼츠 테스트 결제</option></select><small class="muted">V3.3은 라이브 결제를 차단합니다. 실제 운영키는 다음 배포 단계에서 별도 전환합니다.</small></label>
+<div class="full info"><b>현재 상태</b><br>모드: {{config.mode}} · 클라이언트 키: {{config.client_masked}} · 시크릿 키: {{config.secret_masked}}{% if config.ready %}<br><b>토스 테스트 결제 준비완료</b>{% endif %}</div>
+<label>테스트 클라이언트 키<input type="password" name="toss_client_key" placeholder="test_... (빈칸이면 기존 값 유지)" autocomplete="new-password"><small class="muted">브라우저 SDK 초기화용 키입니다.</small></label>
+<label>테스트 시크릿 키<input type="password" name="toss_secret_key" placeholder="test_... (빈칸이면 기존 값 유지)" autocomplete="new-password"><small class="muted">결제 승인·취소 API 서버 호출용입니다. 화면에 다시 표시하지 않습니다.</small></label>
+<label class="full checkline"><input type="checkbox" name="clear_keys" value="1"> 저장된 토스 키 모두 삭제</label>
+<div class="full testpayment-notice"><b>설정 순서</b><p>토스페이먼츠 개발자센터의 테스트 상점 키를 입력 → 토스 테스트 결제로 저장 → 고객 주문에서 실제 토스 테스트 결제창을 확인합니다. 테스트 키는 실제 결제 청구가 발생하지 않습니다.</p></div>
+<div class="full"><button>결제 설정 저장</button></div>
+</form>
+{% endblock %}

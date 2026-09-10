@@ -1,0 +1,9 @@
+{% extends 'base.html' %}{% block title %}예약달력{% endblock %}{% block content %}
+<div class="titlebar"><div><h1>예약 달력</h1><p class="muted">달력에는 상태별 주문 건수와 실제 의상 수량만 표시합니다. 숫자를 누르면 해당 날짜 상세목록을 볼 수 있습니다.</p></div>
+<div class="formbuttons"><a class="button ghost" href="{{url_for('admin_calendar',month=prev_month.strftime('%Y-%m'))}}">이전달</a><b class="calmonth">{{first.strftime('%Y년 %m월')}}</b><a class="button ghost" href="{{url_for('admin_calendar',month=next_month.strftime('%Y-%m'))}}">다음달</a></div></div>
+<div class="calendarwrap"><table class="calendar summarycal"><thead><tr><th>월</th><th>화</th><th>수</th><th>목</th><th>금</th><th>토</th><th>일</th></tr></thead><tbody>
+{% for week in weeks %}<tr>{% for d in week %}<td class="calcell">{% if d %}<div class="calday"><a href="{{url_for('calendar_day',date=d.isoformat())}}">{{d.day}}</a></div>{% set sm=summary_by_day.get(d.isoformat(),{}) %}
+{% for st in ['예약','대여중','세탁/검수중'] %}{% if sm.get(st) %}<a class="calsummary status-{{st|replace('/','-')}}" href="{{url_for('calendar_day',date=d.isoformat(),status=st)}}"><span>{{st}}</span><b>{{sm[st].orders}}건 / {{sm[st].qty}}벌</b></a>{% endif %}{% endfor %}
+{% if not sm %}<span class="muted calempty">일정 없음</span>{% endif %}{% endif %}</td>{% endfor %}</tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}

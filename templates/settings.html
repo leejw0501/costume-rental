@@ -1,0 +1,23 @@
+{% extends 'base.html' %}{% block title %}운영설정{% endblock %}{% block content %}
+<div class="pagehead"><div><h1>운영 설정</h1><p class="muted">배송비, 보증금, 자동 물류일정과 취소·환불 규정을 설정합니다. 이용약관 문구는 상단 약관관리 메뉴에서 관리합니다.</p></div></div>
+<form class="panel formgrid" method="post">
+<label>발송 배송비<input type="number" min="0" name="outbound_shipping_fee" value="{{settings.outbound_shipping_fee}}"></label>
+<label>회수 배송비<input type="number" min="0" name="return_shipping_fee" value="{{settings.return_shipping_fee}}"></label>
+<label>신규상품 기본 보증금<input type="number" min="0" name="default_deposit" value="{{settings.default_deposit}}"></label>
+<div class="full"><hr><h2>보증금 입금계좌</h2><p class="muted">보증금은 카드결제에 포함하지 않고 아래 계좌로 별도 입금받습니다.</p></div>
+<label>은행명<input name="deposit_bank_name" value="{{settings.deposit_bank_name}}" placeholder="예: 국민은행"></label>
+<label>예금주<input name="deposit_account_holder" value="{{settings.deposit_account_holder}}" placeholder="예: 코스튬대여몰"></label>
+<label class="full">보증금 입금계좌<input name="deposit_account_number" value="{{settings.deposit_account_number}}" placeholder="예: 123456-01-123456"><small class="muted">고객 주문·결제 화면에 표시됩니다.</small></label>
+<div class="full"><hr></div>
+<label>발송 준비 영업일<input type="number" min="0" max="14" name="dispatch_lead_business_days" value="{{settings.dispatch_lead_business_days}}"><small class="muted">예: 1이면 대여 시작일 기준 1영업일 전에 발송 예정</small></label>
+<label class="full">휴무/공휴일 날짜<textarea name="holiday_dates" rows="6" placeholder="2026-09-24&#10;2026-09-25">{{settings.holiday_dates}}</textarea><small class="muted">YYYY-MM-DD 형식으로 한 줄에 하나씩 입력하세요. 토·일요일은 자동으로 제외됩니다.</small></label>
+<div class="full"><hr><h2>취소·환불 규정</h2><p class="muted">취소수수료는 상품 대여료에만 적용합니다. 고객이 발송 전에 취소하면 보증금과 왕복 배송비는 전액 환불 대상입니다.</p></div>
+<label>무료 취소 기준<input type="number" min="1" max="30" name="cancel_free_days" value="{{settings.cancel_free_days}}"><small class="muted">대여 시작일 기준 N일 전까지 수수료 0%</small></label>
+<label>무료취소 이후~전날 수수료<input type="number" min="0" max="100" name="cancel_late_fee_percent" value="{{settings.cancel_late_fee_percent}}"><small class="muted">상품 대여료의 %</small></label>
+<label>대여 당일 수수료<input type="number" min="0" max="100" name="cancel_same_day_fee_percent" value="{{settings.cancel_same_day_fee_percent}}"><small class="muted">상품 대여료의 %</small></label>
+<label>대여 시작 후 수수료<input type="number" min="0" max="100" name="cancel_after_start_fee_percent" value="{{settings.cancel_after_start_fee_percent}}"><small class="muted">관리자 취소 등에 적용되는 상품 대여료의 %</small></label>
+<div class="full info"><b>현재 규정 예시</b><br>대여 {{settings.cancel_free_days}}일 전까지 무료 취소 · 그 이후 전날까지 {{settings.cancel_late_fee_percent}}% · 당일 {{settings.cancel_same_day_fee_percent}}% · 시작 후 {{settings.cancel_after_start_fee_percent}}%</div>
+<div class="full muted">배송비·자동 물류일정은 새 예약부터 적용됩니다. 취소수수료 규정은 저장 이후 취소되는 주문부터 즉시 적용됩니다.</div>
+<div class="full"><button>설정 저장</button></div>
+</form>
+{% endblock %}

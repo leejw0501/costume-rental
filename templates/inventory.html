@@ -1,0 +1,7 @@
+{% extends 'base.html' %}{% block title %}재고현황{% endblock %}{% block content %}
+<h1>재고현황</h1>
+<p class="muted">예약은 해당 날짜의 가용재고를 점유합니다. 대여중·세탁/검수중 수량은 현재 물리적으로 출고할 수 없는 재고입니다.</p>
+<div class="tablewrap"><table><thead><tr><th>상품</th><th>사이즈</th><th>총재고</th><th>예약점유</th><th>대여중</th><th>세탁/검수중</th><th>현재 물리가용</th></tr></thead><tbody>
+{% for r in rows %}<tr><td>{{r.name}} {% if not r.is_active %}<span class="badge danger">대여중지</span>{% endif %}<br><span class="muted">{{r.category}}</span></td><td><b>{{r.size_name}}</b></td><td>{{r.total_stock}}</td><td>{{r.reserved_qty}}</td><td>{{r.renting_qty}}</td><td>{{r.cleaning_qty}}</td><td><b>{{r.physical_available}}</b></td></tr>{% else %}<tr><td colspan="7">등록된 재고가 없습니다.</td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}

@@ -1,0 +1,29 @@
+{% extends 'base.html' %}{% block title %}관리자 수동 주문등록{% endblock %}{% block content %}
+<div class="pagehead"><div><h1>관리자 수동 주문등록</h1><p class="muted">전화·카카오톡·오프라인 예약을 직접 등록합니다. 주문 확정 직전에 재고를 다시 검사합니다.</p></div><a class="button ghost" href="{{url_for('reservations')}}">주문목록</a></div>
+<form method="post" class="panel">
+  <h2>고객 및 대여정보</h2>
+  <div class="formgrid">
+    <label>고객명<input name="customer_name" required></label><label>연락처<input name="phone" required></label>
+    <label>대여 시작일<input id="manualStart" type="date" name="start_date" min="{{today}}" value="{{today}}" required></label>
+    <label>대여일수<div class="stepper"><button type="button" id="minusDay" class="ghost small">−</button><input id="manualDays" type="number" name="rental_days" min="1" value="1" readonly><button type="button" id="plusDay" class="small">＋</button></div><span id="periodText" class="muted"></span></label>
+    <label>결제상태<select name="payment_status"><option>결제대기</option><option>결제완료</option></select></label>
+    <label>결제수단<select name="payment_method"><option value="">미지정</option><option>계좌이체</option><option>현금</option><option>카드</option><option>기타</option></select></label>
+    <label>수령인<input name="recipient_name"></label><label>우편번호<input name="zipcode"></label>
+    <label class="full">기본주소<input name="address1" required></label><label class="full">상세주소<input name="address2"></label>
+  </div>
+  <h2 style="margin-top:28px">대여상품</h2>
+  <p class="muted">필요한 줄만 선택하세요. 같은 상품/사이즈를 중복 선택하면 수량을 합산해 검사합니다.</p>
+  <div class="manualitems">
+  {% for n in range(5) %}<div class="manualitemrow"><select name="size_id_{{n}}"><option value="">상품/사이즈 선택</option>{% for o in options %}<option value="{{o.size_id}}">{{o.name}} / {{o.size_name}} · 총재고 {{o.stock}} · 1일 {{'{:,}'.format(o.daily_price)}}원 + 추가 {{'{:,}'.format(o.extra_daily_price)}}원/일</option>{% endfor %}</select><input type="number" min="1" name="qty_{{n}}" value="1"><span>벌</span></div>{% endfor %}
+  </div>
+  <label style="display:block;margin-top:20px">관리자 메모<textarea name="memo" rows="3" placeholder="전화 예약, 입금 확인 내용 등"></textarea></label>
+  <p class="info">배송비·회수배송비·보증금은 현재 운영 설정과 상품정보를 기준으로 자동 계산됩니다.</p>
+  <button>재고 최종 확인 후 수동 주문등록</button>
+</form>
+<script>
+const start=document.getElementById('manualStart'), days=document.getElementById('manualDays'), text=document.getElementById('periodText');
+function showPeriod(){if(!start.value)return; const d=new Date(start.value+'T00:00:00'); const n=Math.max(1,parseInt(days.value||'1')); const e=new Date(d); e.setDate(e.getDate()+n-1); const end=e.toISOString().slice(0,10); text.textContent=n===1?`${start.value} / 1일`:`${start.value} ~ ${end} / ${n}일`;}
+document.getElementById('minusDay').onclick=()=>{days.value=Math.max(1,parseInt(days.value)-1);showPeriod()};
+document.getElementById('plusDay').onclick=()=>{days.value=parseInt(days.value)+1;showPeriod()}; start.onchange=showPeriod; showPeriod();
+</script>
+{% endblock %}

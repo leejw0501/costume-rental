@@ -1,0 +1,19 @@
+{% extends 'base.html' %}{% block title %}관리 대시보드{% endblock %}{% block content %}
+<div class="pagehead"><div><h1>관리 대시보드</h1><div class="muted">{{today}} 기준 오늘 처리해야 할 주문을 먼저 보여줍니다.</div></div><a class="button ghost" href="{{url_for('admin_calendar')}}">예약달력 보기</a></div>
+<h2>오늘 해야 할 일</h2>
+<div class="taskstats"><a class="taskcard warning" href="{{url_for('reservations',payment='결제대기')}}"><span>결제대기</span><b>{{tasks.payment_pending.orders}}건</b><small>결제 진행중</small></a><a class="taskcard dangercard" href="{{url_for('reservations',payment='결제실패')}}"><span>결제실패</span><b>{{tasks.payment_failed.orders}}건</b><small>재결제/고객 확인</small></a>
+<a class="taskcard warning" href="{{url_for('payment_adjustments_admin',status='pending')}}"><span>결제조정 대기</span><b>{{tasks.adjustment_pending.orders}}건</b><small>{{'{:,}'.format(tasks.adjustment_pending.amount)}}원</small></a>
+<a class="taskcard" href="{{url_for('notifications_admin',status='발송대기')}}"><span>고객 알림대기</span><b>{{tasks.notification_pending.orders}}건</b><small>테스트/실제 연동 대기</small></a>
+<a class="taskcard dangercard" href="{{url_for('reservations',task='missed_ship')}}"><span>발송 지연</span><b>{{tasks.missed_ship.orders}}건</b><small>{{tasks.missed_ship.qty}}벌</small></a>
+<a class="taskcard" href="{{url_for('reservations',task='today_ship')}}"><span>오늘 발송</span><b>{{tasks.today_ship.orders}}건</b><small>{{tasks.today_ship.qty}}벌</small></a>
+<a class="taskcard" href="{{url_for('reservations',task='today_return')}}"><span>오늘 회수 예정</span><b>{{tasks.today_return.orders}}건</b><small>{{tasks.today_return.qty}}벌</small></a>
+<a class="taskcard warning" href="{{url_for('reservations',task='overdue')}}"><span>회수 지연</span><b>{{tasks.overdue.orders}}건</b><small>{{tasks.overdue.qty}}벌</small></a>
+<a class="taskcard" href="{{url_for('reservations',task='cleaning')}}"><span>세탁/검수중</span><b>{{tasks.cleaning.orders}}건</b><small>{{tasks.cleaning.qty}}벌</small></a>
+</div>
+<h2>처리 대상 주문</h2>
+<div class="tablewrap"><table><thead><tr><th>업무</th><th>주문번호</th><th>고객</th><th>상품</th><th>대여/물류 일정</th><th>배송/회수</th></tr></thead><tbody>
+{% for r in urgent %}<tr><td><span class="badge {% if r.task_type in ['발송 지연','회수 지연'] %}danger{% endif %}">{{r.task_type}}</span></td><td><a href="{{url_for('reservation_detail',rid=r.id)}}"><b>{{r.order_no}}</b></a></td><td>{{r.customer_name}}<br><span class="muted">{{r.phone}}</span></td><td>{{r.name}} / {{r.size_name}} × {{r.qty}}</td><td>대여 {{r.start_date}} ~ {{r.end_date}}<br><span class="muted">발송 {{r.dispatch_date or '-'}} · 회수 {{r.pickup_date or '-'}}</span></td><td>{{r.shipping_status}} / {{r.return_status}}</td></tr>{% else %}<tr><td colspan="6" class="empty">오늘 처리할 주문이 없습니다.</td></tr>{% endfor %}
+</tbody></table></div>
+<h2>전체 현황</h2>
+<div class="stats"><div class="stat"><b>{{stats.active_products}}</b><span>대여중 상품</span></div><div class="stat"><b>{{stats.reserved}}</b><span>전체 예약</span></div><div class="stat"><b>{{stats.renting}}</b><span>현재 대여중</span></div><div class="stat"><b>{{stats.cleaning}}</b><span>세탁/검수중</span></div></div>
+{% endblock %}

@@ -1,0 +1,21 @@
+{% extends 'base.html' %}{% block title %}상품 수정{% endblock %}{% block content %}
+<div class="pagehead"><div><h1>상품 수정</h1><p class="muted">기본정보, 상품사진, 안내정보와 재고를 관리합니다.</p></div><div class="formbuttons"><a class="button ghost" href="{{url_for('product_detail',product_id=product.id)}}" target="_blank">고객화면 보기</a><a class="button ghost" href="{{url_for('products_admin')}}">상품목록</a></div></div>
+<form method="post" enctype="multipart/form-data" class="panel formgrid">
+<label>상품명<input name="name" value="{{product.name}}" required></label>
+<label>카테고리<input name="category" value="{{product.category}}" required></label>
+<label>기본 1일 대여료<input type="number" name="daily_price" value="{{product.daily_price}}" min="0"></label>
+<label>추가 1일 대여료<input type="number" name="extra_daily_price" value="{{product.extra_daily_price}}" min="0"><small class="muted">2일째부터 하루 추가될 때마다 부과</small></label>
+<label>보증금<input type="number" name="deposit" value="{{product.deposit}}" min="0"></label>
+<label>대표 이미지 변경<input type="file" name="image" accept="image/*"></label>
+<label>노출상태<select name="is_active"><option value="1" {% if product.is_active %}selected{% endif %}>대여중</option><option value="0" {% if not product.is_active %}selected{% endif %}>대여중지</option></select></label>
+<label class="full">추가 상품사진<input type="file" name="gallery_images" accept="image/*" multiple><small class="muted">추가할 사진을 여러 장 선택할 수 있습니다.</small></label>
+<label class="full">상품 설명<textarea name="description" rows="5">{{product.description}}</textarea></label>
+<label class="full">구성품<textarea name="components" rows="4">{{product.components}}</textarea></label>
+<label class="full">사이즈 안내<textarea name="size_guide" rows="4">{{product.size_guide}}</textarea></label>
+<label class="full">대여 시 주의사항<textarea name="rental_notes" rows="5">{{product.rental_notes}}</textarea></label>
+<div class="full"><button>상품정보 저장</button></div>
+</form>
+<h2>추가 상품사진</h2><div class="galleryadmin panel">{% for img in images %}<div class="galleryadminitem"><img src="{{url_for('uploaded_file',filename=img.image_filename)}}" alt=""><form method="post" action="{{url_for('delete_product_image',image_id=img.id)}}" onsubmit="return confirm('이 사진을 삭제하시겠습니까?');"><button class="dangerbtn small">삭제</button></form></div>{% else %}<p class="muted">추가 사진이 없습니다. 위에서 여러 장을 업로드할 수 있습니다.</p>{% endfor %}</div>
+<h2>사이즈 및 재고</h2><form method="post" action="{{url_for('update_sizes',product_id=product.id)}}" class="panel"><div class="sizegrid">{% for s in sizes %}<div class="sizebox"><b>{{s.size_name}}</b><label>재고<input type="number" name="stock_{{s.id}}" value="{{s.stock}}" min="0"></label></div>{% endfor %}</div><hr><div class="stockform"><input name="new_size" placeholder="새 사이즈 예: XL"><input type="number" name="new_stock" placeholder="재고" min="0"><button>재고 저장 / 사이즈 추가</button></div></form>
+{% for s in sizes %}<form method="post" action="{{url_for('delete_size',size_id=s.id)}}" class="inline" onsubmit="return confirm('{{s.size_name}} 사이즈를 삭제하시겠습니까?');"><button class="dangerbtn">{{s.size_name}} 삭제</button></form> {% endfor %}<p class="muted">예약 이력이 있는 사이즈는 삭제할 수 없으며, 대신 재고를 0으로 설정할 수 있습니다.</p>
+{% endblock %}

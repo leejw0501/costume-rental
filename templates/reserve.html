@@ -1,0 +1,38 @@
+{% extends 'base.html' %}{% block title %}예약하기{% endblock %}{% block content %}
+<h1>{{product.name}}</h1>
+<div class="reservegrid">
+  <div class="panel">{% if product.image_filename %}<img class="detailimg" src="{{url_for('uploaded_file',filename=product.image_filename)}}">{% endif %}<p>{{product.description}}</p><p><b>{{'{:,}'.format(product.daily_price)}}원/일</b> · 보증금 {{'{:,}'.format(product.deposit)}}원/벌</p></div>
+  <form method="post" class="panel formgrid" id="reserveForm">
+    <label>사이즈<select name="size_id" id="size" required>{% for s in sizes %}<option value="{{s.id}}">{{s.size_name}} (보유 {{s.stock}}벌)</option>{% endfor %}</select></label>
+    <label>수량<input type="number" name="qty" id="qty" value="1" min="1"></label>
+    <label>대여 시작일<input type="date" name="start_date" id="start" min="{{today}}" required></label>
+    <label>반납일<input type="date" name="end_date" id="end" min="{{today}}" required></label>
+    <label>예약자<input name="customer_name" required></label>
+    <label>연락처<input name="phone" placeholder="010-0000-0000" required></label>
+    <div class="full info">기본 물류 일정은 대여 시작 1일 전 발송, 반납 다음날 회수로 자동 생성됩니다. 관리자가 실제 택배 일정에 맞게 변경할 수 있습니다.</div>
+    <div class="full sectiontitle">배송정보</div>
+    <label>수령인<input name="recipient_name" required></label>
+    <label>우편번호<input name="zipcode" placeholder="선택 입력"></label>
+    <label class="full">주소<input name="address1" placeholder="기본 주소" required></label>
+    <label class="full">상세주소<input name="address2" placeholder="동/호수 등"></label>
+    <label class="full">요청사항<textarea name="memo" placeholder="배송/의상 관련 요청사항"></textarea></label>
+    <div class="full info" id="calc">날짜를 선택하면 예약 가능 재고와 최종 결제예정금액을 계산합니다.</div>
+    <div class="full pricebox"><div><span>왕복 배송비</span><b>{{'{:,}'.format(outbound_fee + return_fee)}}원</b></div><div><span>보증금</span><b>상품 수량에 따라 계산</b></div><div><span>결제예정금액</span><strong id="grandTotal">-</strong></div><p class="muted">보증금은 반납 및 검수 완료 후 환급하는 금액으로 가정한 V0.5 구조입니다.</p></div>
+    <div class="full"><button>예약 등록</button></div>
+  </form>
+</div>
+<script>
+const price={{product.daily_price}}, deposit={{product.deposit}}, outbound={{outbound_fee}}, returnFee={{return_fee}};
+async function calc(){
+  let s=document.querySelector('#start').value,e=document.querySelector('#end').value,size=document.querySelector('#size').value,qty=+document.querySelector('#qty').value||1;
+  if(!s||!e||s>e)return;
+  let days=Math.floor((new Date(e)-new Date(s))/86400000)+1;
+  let j=await fetch(`/availability/${size}?start=${s}&end=${e}`).then(r=>r.json());
+  document.querySelector('#qty').max=j.available;
+  const rental=price*days*qty, dep=deposit*qty, total=rental+dep+outbound+returnFee;
+  document.querySelector('#calc').textContent=`대여 ${days}일 · 예약 가능 ${j.available}벌 · 대여료 ${rental.toLocaleString()}원 · 보증금 ${dep.toLocaleString()}원`;
+  document.querySelector('#grandTotal').textContent=total.toLocaleString()+'원';
+}
+['start','end','size','qty'].forEach(id=>document.querySelector('#'+id).addEventListener('change',calc));
+</script>
+{% endblock %}

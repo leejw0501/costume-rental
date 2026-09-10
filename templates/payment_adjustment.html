@@ -1,0 +1,40 @@
+{% extends 'base.html' %}{% block title %}추가결제{% endblock %}{% block content %}
+<div class="pagehead"><div><span class="eyebrow">ADDITIONAL PAYMENT V3.3</span><h1>추가결제</h1><p class="muted">예약 변경으로 발생한 차액만 추가 결제합니다.</p></div><a class="button ghost" href="{{url_for('order_complete',order_no=order.order_no,phone=order.phone)}}">주문 확인</a></div>
+<div class="payment-layout">
+<section class="panel">
+  <div class="payment-order-head"><div><span class="muted">주문번호</span><h2>{{order.order_no}}</h2></div><span class="badge">{{adj.status}}</span></div>
+  <div class="detailgrid"><div><span>조정 사유</span><b>{{adj.reason}}</b></div><div><span>현재 대여기간</span><b>{{order.start_date}}{% if order.end_date!=order.start_date %} ~ {{order.end_date}}{% endif %} ({{order.rental_days}}일)</b></div></div>
+  <div class="tablewrap"><table><thead><tr><th>상품</th><th>사이즈</th><th>수량</th><th>현재 대여료</th></tr></thead><tbody>{% for i in items %}<tr><td>{{i.name}}</td><td>{{i.size_name}}</td><td>{{i.qty}}벌</td><td>{{'{:,}'.format(i.total_price)}}원</td></tr>{% endfor %}</tbody></table></div>
+  <div class="pricebreakdown" style="margin-top:16px"><div><span>변경 후 총 주문금액</span><b>{{'{:,}'.format(order.final_amount)}}원</b></div><div><span>변경 후 카드결제 대상</span><b>{{'{:,}'.format(card_payment_amount(order))}}원</b></div><div class="total"><span>추가 결제금액</span><strong>{{'{:,}'.format(adj.amount)}}원</strong></div></div>
+</section>
+<section class="panel payment-panel">
+  <h2>추가결제</h2>
+  {% if adj.status=='처리대기' %}
+    {% if pay_config.mode=='TOSS_TEST' %}
+      {% if pay_config.ready %}
+        <div class="testpayment-notice"><b>토스페이먼츠 테스트 추가결제</b><p>차액 {{'{:,}'.format(adj.amount)}}원만 별도 결제 승인합니다.</p></div>
+        <div id="adjust-payment-method" class="toss-widget"></div><div id="adjust-agreement" class="toss-widget"></div>
+        <button id="toss-adjust-button" class="fullbutton" type="button">{{'{:,}'.format(adj.amount)}}원 추가결제</button><p id="toss-adjust-error" class="dangertext"></p>
+        <script src="https://js.tosspayments.com/v2/standard"></script>
+        <script>
+        (async function(){
+          const btn=document.getElementById('toss-adjust-button'), err=document.getElementById('toss-adjust-error');
+          try{
+            const tp=TossPayments({{pay_config.client_key|tojson}}); const widgets=tp.widgets({customerKey:{{toss_customer_key|tojson}}});
+            await widgets.setAmount({currency:'KRW',value:{{adj.amount}}});
+            await Promise.all([widgets.renderPaymentMethods({selector:'#adjust-payment-method',variantKey:'DEFAULT'}),widgets.renderAgreement({selector:'#adjust-agreement'})]);
+            btn.addEventListener('click',async function(){btn.disabled=true;err.textContent='';try{
+              const res=await fetch({{url_for('toss_adjustment_prepare',token=adj.token)|tojson}},{method:'POST',headers:{'Accept':'application/json'}});const data=await res.json();if(!res.ok||!data.ok)throw new Error(data.message||'추가결제 준비 실패');
+              await widgets.setAmount({currency:'KRW',value:data.amount}); const req={orderId:data.orderId,orderName:data.orderName,customerName:data.customerName,customerMobilePhone:data.customerMobilePhone,successUrl:data.successUrl,failUrl:data.failUrl};if(data.customerEmail)req.customerEmail=data.customerEmail;await widgets.requestPayment(req);
+            }catch(e){err.textContent=e&&e.message?e.message:'추가결제 요청 오류';btn.disabled=false;}});
+          }catch(e){err.textContent='토스 결제 UI를 불러오지 못했습니다. '+(e&&e.message?e.message:'');btn.disabled=true;}
+        })();
+        </script>
+      {% else %}<div class="flash payment-fail">관리자 결제연동에서 토스 테스트 키를 설정해주세요.</div>{% endif %}
+    {% else %}
+      <form method="post"><div class="payment-methods">{% for m in methods %}<label class="paymethod"><input type="radio" name="payment_method" value="{{m}}" {% if loop.first %}checked{% endif %}><span>{{m}}</span></label>{% endfor %}</div><div class="testpayment-notice"><b>시뮬레이션 추가결제</b><p>실제 승인 없이 성공/실패 흐름만 확인합니다.</p></div><div class="formbuttons payment-actions"><button name="action" value="success">시뮬레이션 추가결제 성공</button><button class="ghost" name="action" value="fail">실패 테스트</button></div></form>
+    {% endif %}
+  {% elif adj.status=='처리완료' %}<div class="payment-result success"><b>추가결제가 완료되었습니다.</b><span>{{adj.completed_at}}</span>{% if adj.toss_payment_status %}<small>토스 상태 {{adj.toss_payment_status}}</small>{% endif %}</div>
+  {% else %}<div class="payment-result"><b>{{adj.status}}</b><span>현재 처리할 수 없는 추가결제 건입니다.</span></div>{% endif %}
+</section>
+</div>{% endblock %}

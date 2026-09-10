@@ -1,0 +1,5 @@
+{% extends 'base.html' %}{% block title %}약관 관리{% endblock %}{% block content %}
+<div class="pagehead"><div><h1>약관·정책 관리</h1><p class="muted">문서를 수정할 때는 버전도 함께 변경하세요. 기존 고객의 과거 동의 내용은 별도 스냅샷으로 유지됩니다.</p></div></div>
+<div class="legal-tabs">{% for key,label in [('terms','이용약관'),('privacy','개인정보'),('rental','대여·파손/분실')] %}<a class="button {{'primary' if edit==key else 'ghost'}}" href="{{url_for('admin_legal_documents',edit=key)}}">{{label}}</a>{% endfor %}</div>
+{% set d=docs[edit] %}<form class="panel" method="post"><input type="hidden" name="doc_type" value="{{edit}}"><div class="formgrid"><label>문서 제목<input name="title" value="{{d.title}}" required></label><label>문서 버전<input name="version" value="{{d.version}}" required><small>예: 2026.09.08 또는 1.1</small></label><label class="full">문서 내용<textarea name="content" rows="22" required>{{d.content}}</textarea></label></div><div class="info">현재 저장된 버전: <b>{{d.version}}</b> · 수정일 {{d.updated_at}}<br>내용을 바꾼 경우 고객의 신규 동의와 구분할 수 있도록 버전도 변경하는 것을 권장합니다.</div><button>문서 저장</button> <a class="button ghost" target="_blank" href="{{url_for('legal_policy',doc_type=edit)}}">고객 화면 미리보기</a></form>
+{% endblock %}

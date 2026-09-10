@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.env
+.secret_key
+.payment_secrets.json
+.notification_secrets.json
+*.log
+.DS_Store

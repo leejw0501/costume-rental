@@ -1,0 +1,6 @@
+{% extends 'base.html' %}{% block title %}일자별 예약현황{% endblock %}{% block content %}
+<div class="titlebar"><div><h1>{{day}} 예약 현황</h1><p class="muted">{% if status %}{{status}} 상태만 표시 중{% else %}전체 진행중 주문{% endif %}</p></div><a class="button ghost" href="{{url_for('admin_calendar',month=day[:7])}}">달력으로</a></div>
+<div class="tablewrap"><table><thead><tr><th>주문번호</th><th>상태</th><th>상품</th><th>사이즈/수량</th><th>고객</th><th>대여기간</th></tr></thead><tbody>
+{% for r in rows %}<tr><td><a href="{{url_for('reservation_detail',rid=r.id)}}"><b>{{r.order_no}}</b></a></td><td><span class="badge">{{r.status}}</span></td><td>{{r.name}}</td><td>{{r.size_name}} / {{r.qty}}벌</td><td>{{r.customer_name}}<br><span class="muted">{{r.phone}}</span></td><td>{{r.start_date}} ~ {{r.end_date}}</td></tr>{% else %}<tr><td colspan="6" class="empty">해당 조건의 주문이 없습니다.</td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}

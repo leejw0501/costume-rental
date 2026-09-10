@@ -1,0 +1,4 @@
+{% extends 'base.html' %}{% block title %}장바구니 담기{% endblock %}{% block content %}
+<h1>장바구니 담기</h1><div class="panel">{% if product.image_filename %}<img class="detailimg" src="{{url_for('uploaded_file',filename=product.image_filename)}}" alt="">{% endif %}<h2>{{product.name}}</h2><p>{{product.description}}</p><p><b>{{'{:,}'.format(product.daily_price)}}원/일</b> · 보증금 {{'{:,}'.format(product.deposit)}}원/벌</p>
+<form method="post" class="formgrid"><label>사이즈<select name="size_id" required>{% for s in sizes %}<option value="{{s.id}}">{{s.size_name}} · 총 {{s.stock}}벌</option>{% endfor %}</select></label><label>수량<input type="number" name="qty" min="1" value="1" required></label><div class="full formbuttons"><button>장바구니 담기</button><a class="button ghost" href="{{url_for('home')}}">상품목록</a></div></form></div>
+{% endblock %}

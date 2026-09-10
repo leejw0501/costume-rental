@@ -1,0 +1,44 @@
+{% extends 'base.html' %}{% block title %}주문조회{% endblock %}{% block content %}
+<section class="lookuphero"><div><span class="eyebrow">ORDER LOOKUP</span><h1>비회원 주문조회</h1><p>주문번호와 주문 시 입력한 연락처로 대여·결제·배송·환급 상태를 확인할 수 있습니다.</p></div><form class="lookupform" method="post"><label>주문번호<input name="order_no" value="{{order_no_q}}" placeholder="예: R20260907-00001" required></label><label>연락처<input name="phone" value="{{phone_q}}" placeholder="010-1234-5678" required></label><button class="button primary">주문 조회</button></form></section>
+{% if order %}
+<div class="orderdetail panel modern-orderdetail">
+  <div class="orderhead"><div><span class="muted">주문번호</span><h2>{{order.order_no}}</h2></div><span class="badge">{{order.status}}</span></div>
+  <div class="detailgrid">
+    <div><span>대여품목</span><b>{{items|length}}종</b></div>
+    <div><span>대여기간</span><b>{{order.start_date}} ~ {{order.end_date}} ({{order.rental_days}}일)</b></div>
+    <div><span>발송 예정일</span><b>{{order.dispatch_date or '-'}}</b></div>
+    <div><span>회수 예정일</span><b>{{order.pickup_date or '-'}}</b></div>
+    <div><span>카드 결제상태</span><b>{{order.payment_status or '결제완료'}}</b></div><div><span>보증금 입금</span><b>{{order.deposit_payment_status or '입금대기'}}{% if order.deposit_received_at %} · {{order.deposit_received_at}}{% endif %}</b></div><div><span>배송상태</span><b>{{order.shipping_status}}</b></div>
+    <div><span>회수상태</span><b>{{order.return_status}}</b></div>
+    <div><span>발송송장</span><b>{% if order.outbound_tracking_no %}{{order.outbound_carrier}} · <a target="_blank" rel="noopener" href="{{tracking_url(order.outbound_carrier,order.outbound_tracking_no)}}">{{order.outbound_tracking_no}}</a>{% else %}미등록{% endif %}</b></div>
+    <div><span>회수송장</span><b>{% if order.return_tracking_no %}{{order.return_carrier}} · <a target="_blank" rel="noopener" href="{{tracking_url(order.return_carrier,order.return_tracking_no)}}">{{order.return_tracking_no}}</a>{% else %}미등록{% endif %}</b></div>
+    <div><span>수령인</span><b>{{order.recipient_name or order.customer_name}}</b></div>
+    <div><span>연락처</span><b>{{order.phone}}</b></div>
+    <div class="wide"><span>배송주소</span><b>{{order.zipcode}} {{order.address1}} {{order.address2}}</b></div>
+  </div>
+  <div class="tablewrap" style="margin:12px 0"><table><thead><tr><th>상품</th><th>사이즈</th><th>수량</th><th>대여료</th></tr></thead><tbody>{% for i in items %}<tr><td><div class="productcell">{% if i.image_filename %}<img src="{{url_for('uploaded_file',filename=i.image_filename)}}" alt="">{% endif %}<b>{{i.name}}</b></div></td><td>{{i.size_name}}</td><td>{{i.qty}}벌</td><td>{{'{:,}'.format(i.total_price)}}원</td></tr>{% endfor %}</tbody></table></div>
+<div class="pricebreakdown">
+    <div><span>대여료</span><b>{{'{:,}'.format(order.total_price)}}원</b></div>
+    <div><span>배송비</span><b>{{'{:,}'.format(order.shipping_fee)}}원</b></div>
+    <div><span>회수 배송비</span><b>{{'{:,}'.format(order.return_shipping_fee)}}원</b></div>
+    <div><span>보증금</span><b>{{'{:,}'.format(order.deposit_total)}}원</b></div>
+    <div class="total"><span>카드 결제금액</span><strong>{{'{:,}'.format(card_payment_amount(order))}}원</strong></div><div><span>총 주문금액</span><b>{{'{:,}'.format(order.final_amount)}}원</b></div>
+  </div>
+  <div class="detailgrid settlement-public">
+    <div><span>보증금 입금상태</span><b>{{order.deposit_payment_status or '입금대기'}}</b></div><div><span>보증금 정산상태</span><b>{{order.refund_status or '미정산'}}</b></div>
+    <div><span>환급 예정/완료액</span><b>{{'{:,}'.format(order.refund_amount if order.refund_amount is not none else order.deposit_total)}}원</b></div>
+    {% if order.additional_charge %}<div><span>추가 청구액</span><b>{{'{:,}'.format(order.additional_charge)}}원</b></div>{% endif %}
+  </div><div class="info" style="margin-top:12px"><b>보증금 계좌입금</b><br>{% if deposit_bank.bank_name or deposit_bank.account_number %}{{deposit_bank.bank_name}} {{deposit_bank.account_number}}{% if deposit_bank.account_holder %} · 예금주 {{deposit_bank.account_holder}}{% endif %}{% else %}입금계좌는 관리자에게 문의해주세요.{% endif %}</div>
+
+{% if adjustments %}<div class="adjustment-public"><h3>결제금액 조정</h3>{% for a in adjustments %}{% if a.status!='취소' %}<div class="adjustment-public-row"><div><b>{{a.adjustment_type}}</b><span>{{a.reason or ''}}</span></div><strong>{{'{:,}'.format(a.amount)}}원</strong><span class="badge {% if a.status=='처리완료' %}ok{% endif %}">{{a.status}}</span>{% if a.adjustment_type=='추가결제' and a.status=='처리대기' and a.token %}<a class="button small" href="{{url_for('payment_adjustment_page',token=a.token)}}">추가결제</a>{% endif %}</div>{% endif %}{% endfor %}</div>{% endif %}
+  {% if order.status=='취소' and order.cancellation_policy %}<div class="panel" style="margin-top:18px"><h3>취소·환불 내역</h3><div class="detailgrid"><div><span>적용 규정</span><b>{{order.cancellation_policy}}</b></div><div><span>취소수수료</span><b>{{'{:,}'.format(order.cancellation_fee or 0)}}원</b></div><div><span>주문금액 환불 예정액</span><strong>{{'{:,}'.format(order.cancellation_refund_amount or 0)}}원</strong></div><div><span>취소일</span><b>{{order.cancelled_at or '-'}}</b></div></div></div>{% elif order.status=='예약' and order.shipping_status=='발송전' and cancel_info %}<div class="panel" style="margin-top:18px"><h3>지금 취소할 경우</h3><div class="detailgrid"><div><span>적용 규정</span><b>{{cancel_info.policy}}</b></div><div><span>예상 취소수수료</span><b>{{'{:,}'.format(cancel_info.fee)}}원</b></div>{% if order.payment_status=='결제완료' %}<div><span>예상 환불액</span><strong>{{'{:,}'.format(cancel_info.refund)}}원</strong></div>{% else %}<div><span>결제상태</span><strong>결제 전 · 수수료 청구 없음</strong></div>{% endif %}</div><p class="muted">{{cancel_policy_summary}}</p></div>{% endif %}
+  {% if order.payment_status in ['결제대기','결제실패'] and order.status!='취소' and order.payment_token %}<div class="payment-cta"><div><b>{{order.payment_status}}</b><span>{% if order.payment_status=='결제실패' %}재고가 남아 있으면 다시 결제할 수 있습니다.{% else %}결제를 완료하면 예약이 확정됩니다.{% endif %}</span></div><a class="button" href="{{url_for('payment_page',token=order.payment_token)}}">결제하기</a></div>{% endif %}
+  {% if order.status=='예약' and order.shipping_status=='발송전' and order.payment_status!='결제취소' %}
+  <div class="formbuttons"><a class="button ghost" href="{{url_for('order_change',order_no=order.order_no,phone=order.phone)}}">예약 변경</a>
+  <form method="post" action="{{url_for('order_cancel')}}" onsubmit="return confirm('표시된 취소수수료와 예상 환불액을 확인하셨나요? 예약을 취소하시겠습니까?');">
+    <input type="hidden" name="order_no" value="{{order.order_no}}"><input type="hidden" name="phone" value="{{order.phone}}"><button class="danger">예약 취소</button>
+  </form></div>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

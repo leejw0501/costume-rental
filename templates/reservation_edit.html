@@ -5,8 +5,8 @@
 <label>고객명<input name="customer_name" value="{{r.customer_name}}" required></label><label>연락처<input name="phone" value="{{r.phone}}" required></label>
 <label>대여 시작일<input type="date" name="start_date" value="{{r.start_date}}" required></label><label>반납일<input type="date" name="end_date" value="{{r.end_date}}" required></label>
 <label>발송 예정일<input type="date" name="dispatch_date" value="{{r.dispatch_date}}"></label><label>회수 예정일<input type="date" name="pickup_date" value="{{r.pickup_date}}"></label>
-<label>수령인<input name="recipient_name" value="{{r.recipient_name or r.customer_name}}"></label><label>우편번호<input name="zipcode" value="{{r.zipcode}}"></label>
-<label class="full">기본주소<input name="address1" value="{{r.address1}}" required></label><label class="full">상세주소<input name="address2" value="{{r.address2}}"></label><label class="full">관리자 메모<textarea name="memo" rows="4">{{r.memo}}</textarea></label>
+<label>수령인<input name="recipient_name" value="{{r.recipient_name or r.customer_name}}"></label><div class="address-search-row full"><label>우편번호<input id="adminEditZipcode" class="address-readonly" name="zipcode" value="{{r.zipcode}}" readonly></label><button type="button" class="postcode-search-btn" onclick="openPostcodeSearch('adminEditZipcode','adminEditAddress1','adminEditAddress2')">주소검색</button></div>
+<label class="full">기본주소<input id="adminEditAddress1" class="address-readonly" name="address1" value="{{r.address1}}" readonly required></label><label class="full">상세주소<input id="adminEditAddress2" name="address2" value="{{r.address2}}"></label><label class="full">관리자 메모<textarea name="memo" rows="4">{{r.memo}}</textarea></label>
 {% if r.payment_status=='결제완료' %}<div class="full adjustment-notice"><b>결제완료 주문입니다.</b><span>대여기간 변경으로 최종 주문금액이 달라지면 차액을 자동으로 추가결제 또는 부분환불 대기로 등록합니다.</span></div>{% else %}<div class="full info">결제 전 주문은 기간 변경 시 최종 결제예정금액만 다시 계산됩니다.</div>{% endif %}
 <div class="full"><button>주문 수정 저장</button></div>
 </form>{% endblock %}

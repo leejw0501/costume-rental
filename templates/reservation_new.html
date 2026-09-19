@@ -8,8 +8,8 @@
     <label>대여일수<div class="stepper"><button type="button" id="minusDay" class="ghost small">−</button><input id="manualDays" type="number" name="rental_days" min="1" value="1" readonly><button type="button" id="plusDay" class="small">＋</button></div><span id="periodText" class="muted"></span></label>
     <label>결제상태<select name="payment_status"><option>결제대기</option><option>결제완료</option></select></label>
     <label>결제수단<select name="payment_method"><option value="">미지정</option><option>계좌이체</option><option>현금</option><option>카드</option><option>기타</option></select></label>
-    <label>수령인<input name="recipient_name"></label><label>우편번호<input name="zipcode"></label>
-    <label class="full">기본주소<input name="address1" required></label><label class="full">상세주소<input name="address2"></label>
+    <label>수령인<input name="recipient_name"></label><div class="address-search-row full"><label>우편번호<input id="adminNewZipcode" class="address-readonly" name="zipcode" readonly></label><button type="button" class="postcode-search-btn" onclick="openPostcodeSearch('adminNewZipcode','adminNewAddress1','adminNewAddress2')">주소검색</button></div>
+    <label class="full">기본주소<input id="adminNewAddress1" class="address-readonly" name="address1" readonly required></label><label class="full">상세주소<input id="adminNewAddress2" name="address2"></label>
   </div>
   <h2 style="margin-top:28px">대여상품</h2>
   <p class="muted">필요한 줄만 선택하세요. 같은 상품/사이즈를 중복 선택하면 수량을 합산해 검사합니다.</p>

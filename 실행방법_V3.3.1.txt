@@ -1,0 +1,19 @@
+코스튬 대여 쇼핑몰 V3.3.1
+
+[로컬 실행]
+1. py -m pip install -r requirements.txt
+2. py app.py
+3. http://127.0.0.1:5000
+
+[Railway 테스트 서버]
+RAILWAY_DEPLOY_GUIDE.md 파일을 순서대로 따라주세요.
+
+[주요 변경]
+- Railway/Railpack 배포 설정
+- Gunicorn 운영 서버 적용
+- Railway Volume 영구 DB/업로드 지원
+- /health 헬스체크
+- APP_SECRET_KEY 및 외부 API 환경변수 지원
+- Reverse Proxy/HTTPS 인식
+- 외부 업로드 저장소 전용 /uploads 경로
+- 기존 V3.2 기능 및 테스트 데이터 유지

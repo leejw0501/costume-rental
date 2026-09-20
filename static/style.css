@@ -165,3 +165,38 @@ input[readonly].address-readonly{background:#faf8fb;color:#403744;cursor:default
   .plannerresult{grid-template-columns:1fr 1fr!important}
   .detailactions{grid-template-columns:1fr 1fr}
 }
+
+/* V3.3.2 mobile rental flow + footer repair */
+.plannercontrols.compact{grid-template-columns:minmax(0,1fr) minmax(120px,.45fr);margin-bottom:14px}
+.selected-rental-controls{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:stretch;margin:14px 0}
+.selected-date-card,.selected-rental-controls .durationfield{background:#faf8fb;border:1px solid var(--line);border-radius:14px;padding:13px 14px}
+.selected-date-card{display:flex;flex-direction:column;gap:5px}.selected-date-card span,.selected-rental-controls .durationfield>span{font-size:11px;color:#7c7381;font-weight:800}.selected-date-card strong{font-size:16px;color:#251d2a}
+.selected-rental-controls .durationfield{display:flex;flex-direction:column;gap:7px;min-width:190px}.durationstepper{display:grid;grid-template-columns:44px minmax(66px,1fr) 44px;align-items:center;border:1px solid #e3dce7;border-radius:10px;overflow:hidden;background:#fff}.durationstepper button{height:42px;border-radius:0;padding:0;font-size:20px}.durationstepper b{text-align:center}
+.quick-rent-message{min-height:22px;margin:8px 0 2px;font-size:12px;font-weight:800;color:#6f6575}.quick-rent-message.bad{color:#b42318}.quick-rent-message.good{color:#197541}.detailactions button:disabled{opacity:.55;cursor:wait}
+.calendar-loading,.calendar-error{padding:28px;text-align:center}.calendar-error{color:#b42318}
+.mobile-rent-cta{display:none!important}
+
+@media(max-width:640px){
+  .rentalplanner{padding:16px 12px;margin-top:24px}
+  .plannerhead{gap:10px;margin-bottom:10px}.plannerhead h2{font-size:24px}.plannerhead .muted{line-height:1.55}
+  .availabilitybadge{align-self:flex-start;white-space:normal}
+  .plannercontrols.compact{grid-template-columns:1fr 110px;margin:10px 0 12px;padding:12px}
+  .monthnav{margin-top:10px}.calendarlegend{margin:8px 0 10px;gap:8px 12px}
+  .customerCalendar{margin-bottom:12px}.customerCalGrid{padding:8px 6px;gap:3px}.caldaybtn{min-height:48px}
+  .selected-rental-controls{grid-template-columns:1fr;margin:10px 0}.selected-rental-controls .durationfield{min-width:0}
+  .plannerresult{margin:10px 0}.priceformula{display:flex;flex-wrap:wrap;gap:4px 8px;padding:12px}
+  .detailactions{position:static;display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.detailactions button{height:48px;font-size:14px}
+  body:has(.mobile-rent-cta) .sitecontent{padding-bottom:16px!important}
+  body:has(.mobile-rent-cta) .sitefooter{padding-bottom:0!important}
+
+  .sitefooter{width:100%!important;min-height:0!important;height:auto!important;overflow:hidden!important;margin-top:28px!important}
+  .sitefooter .footergrid{display:block!important;width:100%!important;max-width:100%!important;padding:26px 18px 20px!important;margin:0!important}
+  .sitefooter .footergrid>div{display:block!important;width:100%!important;max-width:100%!important;margin:0 0 20px!important}
+  .sitefooter .footergrid>div:last-child{margin-bottom:0!important}
+  .sitefooter .footerbrand{display:grid!important;grid-template-columns:38px minmax(0,1fr)!important;gap:12px!important;align-items:start!important}
+  .sitefooter .footerbrand>div{width:auto!important;min-width:0!important}.sitefooter .footerbrand b{display:block!important}.sitefooter .footerbrand p{display:block!important;width:auto!important;max-width:100%!important;margin:6px 0 0!important}
+  .sitefooter .footergrid>div:not(.footerbrand)>b{display:block!important;margin:0 0 8px!important}.sitefooter .footergrid a{display:block!important;width:fit-content!important;margin:7px 0!important}
+  .sitefooter .footercopy{display:block!important;width:100%!important;max-width:100%!important;margin:0!important;padding:14px 18px max(18px,env(safe-area-inset-bottom))!important}
+  .sitefooter .footercopy span{display:block!important;width:100%!important;margin:3px 0!important}
+}
+@media(max-width:390px){.plannercontrols.compact{grid-template-columns:1fr}.detailactions{grid-template-columns:1fr}.detailactions button{width:100%}}

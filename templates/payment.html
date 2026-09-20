@@ -1,5 +1,5 @@
 {% extends 'base.html' %}{% block title %}결제하기{% endblock %}{% block content %}
-<div class="pagehead"><div><span class="eyebrow">PAYMENT V3.3</span><h1>결제하기</h1><p class="muted">시뮬레이션 또는 토스페이먼츠 테스트 결제로 주문을 확정합니다.</p></div><a class="button ghost" href="{{url_for('order_complete',order_no=order.order_no,phone=order.phone)}}">주문 확인</a></div>
+<div class="pagehead"><div><span class="eyebrow">PAYMENT V3.4</span><h1>결제하기</h1><p class="muted">시뮬레이션 또는 토스페이먼츠 테스트 결제로 주문을 확정합니다.</p></div><a class="button ghost" href="{{url_for('order_complete',order_no=order.order_no,phone=order.phone)}}">주문 확인</a></div>
 <div class="payment-layout">
 <section class="panel">
   <div class="payment-order-head"><div><span class="muted">주문번호</span><h2>{{order.order_no}}</h2></div><span class="badge {% if order.payment_status=='결제완료' %}ok{% elif order.payment_status in ['결제실패','결제취소'] %}danger{% endif %}">{{order.payment_status}}</span></div>

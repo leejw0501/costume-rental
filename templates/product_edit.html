@@ -2,7 +2,7 @@
 <div class="pagehead"><div><h1>상품 수정</h1><p class="muted">기본정보, 상품사진, 안내정보와 재고를 관리합니다.</p></div><div class="formbuttons"><a class="button ghost" href="{{url_for('product_detail',product_id=product.id)}}" target="_blank">고객화면 보기</a><a class="button ghost" href="{{url_for('products_admin')}}">상품목록</a></div></div>
 <form method="post" enctype="multipart/form-data" class="panel formgrid">
 <label>상품명<input name="name" value="{{product.name}}" required></label>
-<label>카테고리<input name="category" value="{{product.category}}" required></label>
+<div class="full"><b>카테고리</b><div class="category-check-grid">{% for c in categories %}<label><input type="checkbox" name="category_ids" value="{{c.id}}" {% if c.id in selected_category_ids %}checked{% endif %}> {{c.name}}</label>{% endfor %}</div></div>
 <label>기본 1일 대여료<input type="number" name="daily_price" value="{{product.daily_price}}" min="0"></label>
 <label>추가 1일 대여료<input type="number" name="extra_daily_price" value="{{product.extra_daily_price}}" min="0"><small class="muted">2일째부터 하루 추가될 때마다 부과</small></label>
 <label>보증금<input type="number" name="deposit" value="{{product.deposit}}" min="0"></label>

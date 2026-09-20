@@ -86,7 +86,7 @@ def health():
         conn.close()
         if ok != 'ok':
             return jsonify({'status':'error','database':ok}), 503
-        return jsonify({'status':'ok','database':'ok','version':'V3.3.2'}), 200
+        return jsonify({'status':'ok','database':'ok','version':'V3.4'}), 200
     except Exception as e:
         return jsonify({'status':'error','error':str(e)}), 503
 
@@ -205,6 +205,48 @@ def init_db():
         FOREIGN KEY(size_id) REFERENCES product_sizes(id)
     );
     ''')
+
+    # V3.4 메인 콘텐츠/카테고리 관리
+    conn.executescript('''
+    CREATE TABLE IF NOT EXISTS shop_categories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        slug TEXT NOT NULL UNIQUE,
+        image_filename TEXT DEFAULT '',
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        show_on_home INTEGER NOT NULL DEFAULT 1,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT DEFAULT ''
+    );
+    CREATE TABLE IF NOT EXISTS product_category_links (
+        product_id INTEGER NOT NULL,
+        category_id INTEGER NOT NULL,
+        PRIMARY KEY(product_id,category_id),
+        FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE CASCADE,
+        FOREIGN KEY(category_id) REFERENCES shop_categories(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS home_banners (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        subtitle TEXT DEFAULT '',
+        image_filename TEXT DEFAULT '',
+        mobile_image_filename TEXT DEFAULT '',
+        button_text TEXT DEFAULT '대여상품 보기',
+        button_url TEXT DEFAULT '/',
+        start_date TEXT DEFAULT '',
+        end_date TEXT DEFAULT '',
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT DEFAULT ''
+    );
+    CREATE TABLE IF NOT EXISTS home_product_sections (
+        product_id INTEGER NOT NULL,
+        section TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY(product_id,section),
+        FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE CASCADE
+    );
+    ''')
     conn.execute("""CREATE TABLE IF NOT EXISTS reservation_items (
         id INTEGER PRIMARY KEY AUTOINCREMENT, reservation_id INTEGER NOT NULL, product_id INTEGER NOT NULL, size_id INTEGER,
         qty INTEGER NOT NULL DEFAULT 1, daily_price INTEGER NOT NULL DEFAULT 0, rental_days INTEGER NOT NULL DEFAULT 1,
@@ -250,7 +292,7 @@ def init_db():
     add_column_if_missing(conn, 'reservations', 'dispatch_date', "TEXT DEFAULT ''")
     add_column_if_missing(conn, 'reservations', 'pickup_date', "TEXT DEFAULT ''")
     add_column_if_missing(conn, 'reservations', 'deposit_received', 'INTEGER NOT NULL DEFAULT 0')
-    # V3.3 보증금은 카드결제와 분리하여 계좌입금으로만 관리합니다.
+    # V3.4 보증금은 카드결제와 분리하여 계좌입금으로만 관리합니다.
     add_column_if_missing(conn, 'reservations', 'deposit_payment_status', "TEXT NOT NULL DEFAULT '입금대기'")
     add_column_if_missing(conn, 'reservations', 'deposit_received_at', "TEXT DEFAULT ''")
     add_column_if_missing(conn, 'reservations', 'deposit_payment_note', "TEXT DEFAULT ''")
@@ -328,6 +370,29 @@ def init_db():
     add_column_if_missing(conn, 'payment_adjustments', 'toss_raw_json', "TEXT DEFAULT ''")
     add_column_if_missing(conn, 'payment_adjustments', 'provider_refunded_amount', 'INTEGER NOT NULL DEFAULT 0')
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_adjustments_token ON payment_adjustments(token) WHERE token<>''")
+
+    # 기존 문자열 카테고리를 V3.4 카테고리 테이블로 자동 이관합니다.
+    legacy_cats=conn.execute("SELECT DISTINCT TRIM(category) name FROM products WHERE COALESCE(TRIM(category),'')<>'' ORDER BY name").fetchall()
+    for i,row in enumerate(legacy_cats, start=1):
+        name=row['name']
+        slug='cat-'+hashlib.sha1(name.encode('utf-8')).hexdigest()[:10]
+        conn.execute("INSERT OR IGNORE INTO shop_categories(name,slug,sort_order,show_on_home,is_active,created_at) VALUES(?,?,?,?,1,?)",(name,slug,i*10,1,datetime.now().strftime('%Y-%m-%d %H:%M')))
+    # 기존 상품을 해당 기존 카테고리에 연결합니다.
+    conn.execute("INSERT OR IGNORE INTO product_category_links(product_id,category_id) SELECT p.id,c.id FROM products p JOIN shop_categories c ON c.name=p.category WHERE COALESCE(TRIM(p.category),'')<>''")
+    # 초기 카테고리 이미지는 해당 카테고리 첫 상품의 대표이미지를 사용합니다.
+    for c in conn.execute("SELECT id,name,image_filename FROM shop_categories").fetchall():
+        if not c['image_filename']:
+            img=conn.execute("SELECT image_filename FROM products WHERE category=? AND COALESCE(image_filename,'')<>'' ORDER BY id LIMIT 1",(c['name'],)).fetchone()
+            if img: conn.execute("UPDATE shop_categories SET image_filename=? WHERE id=?",(img['image_filename'],c['id']))
+    # 최초 메인 배너가 없으면 테스트 상품 이미지로 기본 배너 1개를 구성합니다.
+    if conn.execute("SELECT COUNT(*) c FROM home_banners").fetchone()['c']==0:
+        img=conn.execute("SELECT image_filename FROM products WHERE is_active=1 AND COALESCE(image_filename,'')<>'' ORDER BY id LIMIT 1").fetchone()
+        conn.execute("INSERT INTO home_banners(title,subtitle,image_filename,button_text,button_url,sort_order,is_active,created_at) VALUES(?,?,?,?,?,10,1,?)",('코스튬 대여로 더 특별한 순간을!','졸업사진 · 할로윈 · 파티 · 이벤트까지 원하는 날짜에 간편하게 대여하세요.',img['image_filename'] if img else '','지금 코스튬 보러가기','/#catalog',datetime.now().strftime('%Y-%m-%d %H:%M')))
+    # 최초 BEST/시즌추천 상품 샘플
+    if conn.execute("SELECT COUNT(*) c FROM home_product_sections").fetchone()['c']==0:
+        ids=[r['id'] for r in conn.execute("SELECT id FROM products WHERE is_active=1 ORDER BY id LIMIT 12").fetchall()]
+        for n,pid in enumerate(ids[:8],start=1): conn.execute("INSERT OR IGNORE INTO home_product_sections(product_id,section,sort_order) VALUES(?,?,?)",(pid,'BEST',n*10))
+        for n,pid in enumerate(ids[8:12],start=1): conn.execute("INSERT OR IGNORE INTO home_product_sections(product_id,section,sort_order) VALUES(?,?,?)",(pid,'SEASON',n*10))
 
     # V2.6 약관 문서와 전자 동의 이력
     conn.execute("""CREATE TABLE IF NOT EXISTS legal_documents (
@@ -508,7 +573,7 @@ def init_db():
 
     # V0.8 물류 일정 보정: 기존 주문은 대여 시작 1일 전 발송, 반납 다음날 회수 예정으로 기본 설정
     # V2.5 실제 수납된 주문금액과 주문금액 조정(추가결제/부분환불/전액환불)을 분리 관리합니다.
-    # V3.3 카드/PG 결제액은 보증금을 제외한 대여료+배송비만 의미합니다.
+    # V3.4 카드/PG 결제액은 보증금을 제외한 대여료+배송비만 의미합니다.
     conn.execute("UPDATE reservations SET paid_order_amount=MAX(0,final_amount-COALESCE(deposit_total,0)) WHERE payment_status='결제완료' AND COALESCE(paid_order_amount,0)=0")
     migrated_v32=get_text_setting(conn,'deposit_separate_payment_migrated_v32','0')
     if migrated_v32!='1':
@@ -1476,6 +1541,40 @@ def normalize_phone(value):
     return ''.join(ch for ch in (value or '') if ch.isdigit())
 
 
+
+def slug_for_category(name):
+    base=''.join(ch.lower() if ch.isalnum() else '-' for ch in (name or '')).strip('-')
+    while '--' in base: base=base.replace('--','-')
+    return (base[:40] or 'category')
+
+
+def unique_category_slug(conn,name,exclude_id=None):
+    base=slug_for_category(name)
+    slug=base; n=2
+    while True:
+        row=conn.execute('SELECT id FROM shop_categories WHERE slug=?',(slug,)).fetchone()
+        if not row or (exclude_id and row['id']==exclude_id): return slug
+        slug=f'{base}-{n}'; n+=1
+
+
+def set_product_categories(conn,product_id,category_ids):
+    clean=[]
+    for value in category_ids:
+        try: cid=int(value)
+        except (ValueError,TypeError): continue
+        if conn.execute('SELECT id FROM shop_categories WHERE id=? AND is_active=1',(cid,)).fetchone(): clean.append(cid)
+    clean=list(dict.fromkeys(clean))
+    conn.execute('DELETE FROM product_category_links WHERE product_id=?',(product_id,))
+    for cid in clean: conn.execute('INSERT OR IGNORE INTO product_category_links(product_id,category_id) VALUES(?,?)',(product_id,cid))
+    primary=conn.execute('SELECT name FROM shop_categories WHERE id=?',(clean[0],)).fetchone()['name'] if clean else ''
+    conn.execute('UPDATE products SET category=? WHERE id=?',(primary,product_id))
+    return clean
+
+
+def active_home_banners(conn):
+    today=date.today().isoformat()
+    return conn.execute("SELECT * FROM home_banners WHERE is_active=1 AND (COALESCE(start_date,'')='' OR start_date<=?) AND (COALESCE(end_date,'')='' OR end_date>=?) ORDER BY sort_order,id",(today,today)).fetchall()
+
 def current_member():
     member_id = session.get('member_user_id')
     if not member_id:
@@ -1599,8 +1698,9 @@ def inject_user_context():
         'account_number': get_text_setting(conn,'deposit_account_number',''),
         'account_holder': get_text_setting(conn,'deposit_account_holder',''),
     }
+    nav_categories=conn.execute("SELECT id,name,slug FROM shop_categories WHERE is_active=1 ORDER BY sort_order,id LIMIT 10").fetchall()
     conn.close()
-    return {'admin_user': admin, 'member_user': member, 'deposit_bank': deposit_bank, 'card_payment_amount': card_payment_amount}
+    return {'admin_user': admin, 'member_user': member, 'deposit_bank': deposit_bank, 'card_payment_amount': card_payment_amount, 'nav_categories': nav_categories}
 
 
 def safe_next_url(value):
@@ -1890,41 +1990,33 @@ def admin_password():
 
 @app.route('/')
 def home():
-    q = request.args.get('q','').strip()
-    category = request.args.get('category','').strip()
-    sort = request.args.get('sort','newest').strip()
-    try: page = max(1, int(request.args.get('page','1')))
-    except ValueError: page = 1
-    per_page = 12
-    sort_sql = {
-        'newest':'p.id DESC', 'name':'p.name ASC',
-        'price_low':'p.daily_price ASC, p.id DESC',
-        'price_high':'p.daily_price DESC, p.id DESC'
-    }.get(sort, 'p.id DESC')
-    conn = db()
-    where = ['p.is_active=1']
-    params = []
+    q=request.args.get('q','').strip(); category=request.args.get('category','').strip(); sort=request.args.get('sort','newest').strip()
+    try: page=max(1,int(request.args.get('page','1')))
+    except ValueError: page=1
+    per_page=12
+    sort_sql={'newest':'p.id DESC','name':'p.name ASC','price_low':'p.daily_price ASC,p.id DESC','price_high':'p.daily_price DESC,p.id DESC'}.get(sort,'p.id DESC')
+    conn=db(); where=['p.is_active=1']; params=[]
     if q:
-        where.append('(p.name LIKE ? OR p.description LIKE ?)')
-        params.extend([f'%{q}%', f'%{q}%'])
+        where.append('(p.name LIKE ? OR p.description LIKE ?)'); params.extend([f'%{q}%',f'%{q}%'])
+    selected_category=None
     if category:
-        where.append('p.category=?')
-        params.append(category)
+        selected_category=conn.execute('SELECT * FROM shop_categories WHERE slug=? AND is_active=1',(category,)).fetchone()
+        if selected_category:
+            where.append('EXISTS(SELECT 1 FROM product_category_links pcl WHERE pcl.product_id=p.id AND pcl.category_id=?)'); params.append(selected_category['id'])
     where_sql=' AND '.join(where)
-    total = conn.execute(f'SELECT COUNT(*) c FROM products p WHERE {where_sql}', params).fetchone()['c']
-    total_pages = max(1, (total + per_page - 1)//per_page)
-    page = min(page, total_pages)
-    products = conn.execute(f'''
-        SELECT p.*, COALESCE(SUM(ps.stock),0) total_stock,
-               GROUP_CONCAT(ps.size_name, ', ') sizes_text
-        FROM products p LEFT JOIN product_sizes ps ON ps.product_id=p.id
-        WHERE {where_sql}
-        GROUP BY p.id ORDER BY {sort_sql}
-        LIMIT ? OFFSET ?
-    ''', params + [per_page, (page-1)*per_page]).fetchall()
-    categories = [r['category'] for r in conn.execute("SELECT DISTINCT category FROM products WHERE is_active=1 AND category<>'' ORDER BY category").fetchall()]
+    total=conn.execute(f'SELECT COUNT(*) c FROM products p WHERE {where_sql}',params).fetchone()['c']
+    total_pages=max(1,(total+per_page-1)//per_page); page=min(page,total_pages)
+    products=conn.execute(f'''SELECT p.*,COALESCE(SUM(ps.stock),0) total_stock,GROUP_CONCAT(ps.size_name, ', ') sizes_text,
+        COALESCE((SELECT GROUP_CONCAT(c.name, ', ') FROM product_category_links pcl JOIN shop_categories c ON c.id=pcl.category_id WHERE pcl.product_id=p.id AND c.is_active=1),'') category_names
+        FROM products p LEFT JOIN product_sizes ps ON ps.product_id=p.id WHERE {where_sql}
+        GROUP BY p.id ORDER BY {sort_sql} LIMIT ? OFFSET ?''',params+[per_page,(page-1)*per_page]).fetchall()
+    categories=conn.execute("SELECT * FROM shop_categories WHERE is_active=1 ORDER BY sort_order,id").fetchall()
+    home_categories=conn.execute("SELECT * FROM shop_categories WHERE is_active=1 AND show_on_home=1 ORDER BY sort_order,id LIMIT 12").fetchall()
+    banners=active_home_banners(conn)
+    best_products=conn.execute("SELECT p.*,COALESCE(SUM(ps.stock),0) total_stock FROM home_product_sections h JOIN products p ON p.id=h.product_id LEFT JOIN product_sizes ps ON ps.product_id=p.id WHERE h.section='BEST' AND p.is_active=1 GROUP BY p.id,h.sort_order ORDER BY h.sort_order,p.id LIMIT 8").fetchall()
+    season_products=conn.execute("SELECT p.*,COALESCE(SUM(ps.stock),0) total_stock FROM home_product_sections h JOIN products p ON p.id=h.product_id LEFT JOIN product_sizes ps ON ps.product_id=p.id WHERE h.section='SEASON' AND p.is_active=1 GROUP BY p.id,h.sort_order ORDER BY h.sort_order,p.id LIMIT 8").fetchall()
     conn.close()
-    return render_template('home.html', products=products, categories=categories, q=q, selected_category=category, sort=sort, page=page, total=total, total_pages=total_pages)
+    return render_template('home.html',products=products,categories=categories,home_categories=home_categories,banners=banners,best_products=best_products,season_products=season_products,q=q,selected_category=selected_category,sort=sort,page=page,total=total,total_pages=total_pages)
 
 
 
@@ -2737,6 +2829,83 @@ def order_cancel():
     return redirect(url_for('order_lookup',order_no=ono,phone=phone))
 
 
+@app.route('/admin/home-content')
+def admin_home_content():
+    conn=db()
+    banners=conn.execute('SELECT * FROM home_banners ORDER BY sort_order,id').fetchall()
+    categories=conn.execute("SELECT c.*,COUNT(pcl.product_id) product_count FROM shop_categories c LEFT JOIN product_category_links pcl ON pcl.category_id=c.id GROUP BY c.id ORDER BY c.sort_order,c.id").fetchall()
+    products=conn.execute("SELECT id,name,image_filename,is_active FROM products ORDER BY name").fetchall()
+    best_ids={r['product_id'] for r in conn.execute("SELECT product_id FROM home_product_sections WHERE section='BEST'").fetchall()}
+    season_ids={r['product_id'] for r in conn.execute("SELECT product_id FROM home_product_sections WHERE section='SEASON'").fetchall()}
+    conn.close()
+    return render_template('home_content_admin.html',banners=banners,categories=categories,products=products,best_ids=best_ids,season_ids=season_ids)
+
+@app.route('/admin/home-banners/save',methods=['POST'])
+def admin_home_banner_save():
+    conn=db()
+    try: bid=int(request.form.get('banner_id','0') or 0); sort_order=int(request.form.get('sort_order','0') or 0)
+    except ValueError: bid=0; sort_order=0
+    title=request.form.get('title','').strip()
+    if not title: conn.close(); flash('배너 제목을 입력해주세요.'); return redirect(url_for('admin_home_content'))
+    current=conn.execute('SELECT * FROM home_banners WHERE id=?',(bid,)).fetchone() if bid else None
+    desktop=save_image(request.files.get('image')) or (current['image_filename'] if current else '')
+    mobile=save_image(request.files.get('mobile_image')) or (current['mobile_image_filename'] if current else '')
+    values=(title,request.form.get('subtitle','').strip(),desktop,mobile,request.form.get('button_text','').strip() or '대여상품 보기',request.form.get('button_url','').strip() or '/#catalog',request.form.get('start_date','').strip(),request.form.get('end_date','').strip(),sort_order,1 if request.form.get('is_active')=='1' else 0)
+    if current:
+        conn.execute("UPDATE home_banners SET title=?,subtitle=?,image_filename=?,mobile_image_filename=?,button_text=?,button_url=?,start_date=?,end_date=?,sort_order=?,is_active=? WHERE id=?",values+(bid,))
+    else:
+        conn.execute("INSERT INTO home_banners(title,subtitle,image_filename,mobile_image_filename,button_text,button_url,start_date,end_date,sort_order,is_active,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",values+(datetime.now().strftime('%Y-%m-%d %H:%M'),))
+    conn.commit(); conn.close(); flash('메인 배너를 저장했습니다.'); return redirect(url_for('admin_home_content'))
+
+@app.route('/admin/home-banners/<int:bid>/delete',methods=['POST'])
+def admin_home_banner_delete(bid):
+    conn=db(); conn.execute('DELETE FROM home_banners WHERE id=?',(bid,)); conn.commit(); conn.close(); flash('배너를 삭제했습니다.'); return redirect(url_for('admin_home_content'))
+
+@app.route('/admin/categories/save',methods=['POST'])
+def admin_category_save():
+    conn=db()
+    try: cid=int(request.form.get('category_id','0') or 0); sort_order=int(request.form.get('sort_order','0') or 0)
+    except ValueError: cid=0; sort_order=0
+    name=request.form.get('name','').strip()
+    if not name: conn.close(); flash('카테고리명을 입력해주세요.'); return redirect(url_for('admin_home_content'))
+    exists=conn.execute('SELECT id FROM shop_categories WHERE name=? AND id<>?',(name,cid)).fetchone()
+    if exists: conn.close(); flash('같은 이름의 카테고리가 이미 있습니다.'); return redirect(url_for('admin_home_content'))
+    current=conn.execute('SELECT * FROM shop_categories WHERE id=?',(cid,)).fetchone() if cid else None
+    image=save_image(request.files.get('image')) or (current['image_filename'] if current else '')
+    slug=unique_category_slug(conn,name,cid or None)
+    values=(name,slug,image,sort_order,1 if request.form.get('show_on_home')=='1' else 0,1 if request.form.get('is_active')=='1' else 0)
+    if current: conn.execute('UPDATE shop_categories SET name=?,slug=?,image_filename=?,sort_order=?,show_on_home=?,is_active=? WHERE id=?',values+(cid,))
+    else: conn.execute('INSERT INTO shop_categories(name,slug,image_filename,sort_order,show_on_home,is_active,created_at) VALUES(?,?,?,?,?,?,?)',values+(datetime.now().strftime('%Y-%m-%d %H:%M'),))
+    # 대표 카테고리 문자열도 새 이름과 동기화
+    if current and current['name']!=name:
+        conn.execute("UPDATE products SET category=? WHERE category=?",(name,current['name']))
+    conn.commit(); conn.close(); flash('카테고리를 저장했습니다.'); return redirect(url_for('admin_home_content'))
+
+@app.route('/admin/categories/<int:cid>/delete',methods=['POST'])
+def admin_category_delete(cid):
+    conn=db(); c=conn.execute('SELECT * FROM shop_categories WHERE id=?',(cid,)).fetchone()
+    if c:
+        affected=[r['product_id'] for r in conn.execute('SELECT product_id FROM product_category_links WHERE category_id=?',(cid,)).fetchall()]
+        conn.execute('DELETE FROM product_category_links WHERE category_id=?',(cid,)); conn.execute('DELETE FROM shop_categories WHERE id=?',(cid,))
+        for pid in affected:
+            fallback=conn.execute('SELECT c.name FROM product_category_links pcl JOIN shop_categories c ON c.id=pcl.category_id WHERE pcl.product_id=? AND c.is_active=1 ORDER BY c.sort_order,c.id LIMIT 1',(pid,)).fetchone()
+            conn.execute('UPDATE products SET category=? WHERE id=?',(fallback['name'] if fallback else '',pid))
+        conn.commit(); flash('카테고리를 삭제했습니다. 연결 상품은 남아 있는 다른 카테고리로 자동 정리했습니다.')
+    conn.close(); return redirect(url_for('admin_home_content'))
+
+@app.route('/admin/home-products',methods=['POST'])
+def admin_home_products_save():
+    conn=db(); conn.execute("DELETE FROM home_product_sections WHERE section IN ('BEST','SEASON')")
+    for section,field,prefix in [('BEST','best_ids','best_order_'),('SEASON','season_ids','season_order_')]:
+        rows=[]
+        for val in request.form.getlist(field):
+            try:
+                pid=int(val); order=int(request.form.get(prefix+str(pid),'999') or 999)
+            except ValueError: continue
+            if conn.execute('SELECT id FROM products WHERE id=?',(pid,)).fetchone(): rows.append((order,pid))
+        for order,pid in sorted(rows): conn.execute('INSERT OR IGNORE INTO home_product_sections(product_id,section,sort_order) VALUES(?,?,?)',(pid,section,max(0,order)))
+    conn.commit(); conn.close(); flash('메인 추천상품 구성과 노출순서를 저장했습니다.'); return redirect(url_for('admin_home_content'))
+
 @app.route('/admin/products')
 def products_admin():
     q = request.args.get('q','').strip()
@@ -2758,8 +2927,11 @@ def products_admin():
         where.append('(p.name LIKE ? OR p.description LIKE ?)')
         params.extend([f'%{q}%', f'%{q}%'])
     if category:
-        where.append('p.category=?')
-        params.append(category)
+        try: category_id=int(category)
+        except ValueError: category_id=0
+        if category_id:
+            where.append('EXISTS(SELECT 1 FROM product_category_links pcl WHERE pcl.product_id=p.id AND pcl.category_id=?)')
+            params.append(category_id)
     if status == 'active': where.append('p.is_active=1')
     elif status == 'inactive': where.append('p.is_active=0')
     where_sql=' AND '.join(where)
@@ -2777,7 +2949,7 @@ def products_admin():
         GROUP BY p.id ORDER BY {sort_sql}
         LIMIT ? OFFSET ?
     ''', params + [per_page,(page-1)*per_page]).fetchall()
-    categories = [r['category'] for r in conn.execute("SELECT DISTINCT category FROM products WHERE category<>'' ORDER BY category").fetchall()]
+    categories = conn.execute("SELECT * FROM shop_categories WHERE is_active=1 ORDER BY sort_order,id").fetchall()
     conn.close()
     return render_template('products.html', products=products, categories=categories, q=q, selected_category=category, selected_status=status, sort=sort, page=page, total=total, total_pages=total_pages)
 
@@ -2785,9 +2957,9 @@ def products_admin():
 @app.route('/admin/products/new', methods=['GET','POST'])
 def new_product():
     conn = db()
-    categories = [r['category'] for r in conn.execute("SELECT DISTINCT category FROM products WHERE category<>'' ORDER BY category").fetchall()]
+    categories = conn.execute("SELECT * FROM shop_categories WHERE is_active=1 ORDER BY sort_order,id").fetchall()
     if request.method == 'POST':
-        name = request.form.get('name','').strip(); category = request.form.get('category','').strip()
+        name = request.form.get('name','').strip(); category_ids = request.form.getlist('category_ids')
         try:
             daily_price = max(0, int(request.form.get('daily_price','0') or 0))
             extra_daily_price = max(0, int(request.form.get('extra_daily_price','0') or 0))
@@ -2797,11 +2969,12 @@ def new_product():
         description = request.form.get('description','').strip(); sizes_raw = request.form.get('sizes','').strip()
         components=request.form.get('components','').strip(); size_guide=request.form.get('size_guide','').strip(); rental_notes=request.form.get('rental_notes','').strip()
         image_filename = save_image(request.files.get('image'))
-        if not name or not category:
-            flash('상품명과 카테고리를 입력해주세요.'); conn.close(); return redirect(request.url)
+        if not name or not category_ids:
+            flash('상품명과 카테고리를 하나 이상 선택해주세요.'); conn.close(); return redirect(request.url)
         cur = conn.execute('''INSERT INTO products(name,category,size,stock,daily_price,extra_daily_price,deposit,description,image_filename,is_active,components,size_guide,rental_notes)
-                              VALUES(?,?,?,?,?,?,?,?,?,1,?,?,?)''', (name,category,'',0,daily_price,extra_daily_price,deposit,description,image_filename,components,size_guide,rental_notes))
+                              VALUES(?,?,?,?,?,?,?,?,?,1,?,?,?)''', (name,'','',0,daily_price,extra_daily_price,deposit,description,image_filename,components,size_guide,rental_notes))
         pid = cur.lastrowid
+        set_product_categories(conn,pid,category_ids)
         parsed = []
         for item in sizes_raw.split(','):
             item = item.strip()
@@ -2828,17 +3001,20 @@ def new_product():
 @app.route('/admin/products/<int:product_id>/edit', methods=['GET','POST'])
 def edit_product(product_id):
     conn = db(); product, sizes = get_product(conn, product_id)
+    categories=conn.execute("SELECT * FROM shop_categories WHERE is_active=1 ORDER BY sort_order,id").fetchall()
+    selected_category_ids={r['category_id'] for r in conn.execute('SELECT category_id FROM product_category_links WHERE product_id=?',(product_id,)).fetchall()}
     if not product: conn.close(); return '상품이 없습니다.', 404
     if request.method == 'POST':
-        name = request.form.get('name','').strip(); category=request.form.get('category','').strip()
-        if not name or not category:
-            flash('상품명과 카테고리는 필수입니다.'); conn.close(); return redirect(request.url)
+        name = request.form.get('name','').strip(); category_ids=request.form.getlist('category_ids')
+        if not name or not category_ids:
+            flash('상품명과 카테고리를 하나 이상 선택해주세요.'); conn.close(); return redirect(request.url)
         try:
             price=max(0,int(request.form.get('daily_price','0') or 0)); extra_price=max(0,int(request.form.get('extra_daily_price','0') or 0)); deposit=max(0,int(request.form.get('deposit','0') or 0))
         except ValueError:
             flash('가격을 숫자로 입력해주세요.'); conn.close(); return redirect(request.url)
-        conn.execute('UPDATE products SET name=?,category=?,daily_price=?,extra_daily_price=?,deposit=?,description=?,components=?,size_guide=?,rental_notes=?,is_active=? WHERE id=?',
-                     (name,category,price,extra_price,deposit,request.form.get('description','').strip(),request.form.get('components','').strip(),request.form.get('size_guide','').strip(),request.form.get('rental_notes','').strip(),1 if request.form.get('is_active')=='1' else 0,product_id))
+        conn.execute('UPDATE products SET name=?,daily_price=?,extra_daily_price=?,deposit=?,description=?,components=?,size_guide=?,rental_notes=?,is_active=? WHERE id=?',
+                     (name,price,extra_price,deposit,request.form.get('description','').strip(),request.form.get('components','').strip(),request.form.get('size_guide','').strip(),request.form.get('rental_notes','').strip(),1 if request.form.get('is_active')=='1' else 0,product_id))
+        set_product_categories(conn,product_id,category_ids)
         filename = save_image(request.files.get('image'))
         if filename:
             old = product['image_filename']; conn.execute('UPDATE products SET image_filename=? WHERE id=?',(filename,product_id))
@@ -2850,7 +3026,7 @@ def edit_product(product_id):
             fn=save_image(file)
             if fn: conn.execute('INSERT INTO product_images(product_id,image_filename,sort_order,created_at) VALUES(?,?,?,?)',(product_id,fn,idx,datetime.now().strftime('%Y-%m-%d %H:%M')))
         conn.commit(); conn.close(); flash('상품 정보를 수정했습니다.'); return redirect(url_for('edit_product', product_id=product_id))
-    images=conn.execute('SELECT * FROM product_images WHERE product_id=? ORDER BY sort_order,id',(product_id,)).fetchall(); conn.close(); return render_template('product_edit.html', product=product, sizes=sizes, images=images)
+    images=conn.execute('SELECT * FROM product_images WHERE product_id=? ORDER BY sort_order,id',(product_id,)).fetchall(); conn.close(); return render_template('product_edit.html', product=product, sizes=sizes, images=images, categories=categories, selected_category_ids=selected_category_ids)
 
 
 
@@ -3528,7 +3704,7 @@ def admin_payment_settings():
                 conn.close(); flash('토스 테스트 모드를 사용하려면 테스트 클라이언트 키와 테스트 시크릿 키가 모두 필요합니다.'); return redirect(url_for('admin_payment_settings'))
             # V3.0은 테스트 결제 전용입니다. 라이브 키 오입력으로 실제 결제가 생기는 것을 차단합니다.
             if not client.startswith('test_') or not secret.startswith('test_'):
-                conn.close(); flash('V3.3에서는 test_ 로 시작하는 토스 테스트 키만 저장할 수 있습니다. 라이브 키는 사용할 수 없습니다.'); return redirect(url_for('admin_payment_settings'))
+                conn.close(); flash('V3.4에서는 test_ 로 시작하는 토스 테스트 키만 저장할 수 있습니다. 라이브 키는 사용할 수 없습니다.'); return redirect(url_for('admin_payment_settings'))
         save_payment_secrets(client,secret)
         set_setting(conn,'payment_provider_mode',new_mode)
         conn.commit(); conn.close(); flash('결제 연동 설정을 저장했습니다.' if new_mode=='MOCK' else '토스페이먼츠 테스트 결제 설정을 저장했습니다.')

@@ -3,31 +3,24 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#17121f">
+  <meta name="theme-color" content="#ffffff">
   <title>{% block title %}코스튬 대여몰{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static',filename='style.css') }}">
 </head>
 <body class="{% if admin_user %}has-adminbar{% endif %}">
-  <div class="noticebar"><div class="wrap noticeinner"><span>원하는 날짜에 필요한 코스튬만 간편하게 대여하세요</span><span class="noticehide">기본 1일 · 하루 단위 연장 · 날짜별 재고 확인</span></div></div>
-  <header class="siteheader">
-    <div class="wrap mainnav">
-      <a class="shopbrand" href="{{ url_for('home') }}"><span class="brandmark">C</span><span><b>COSTUME RENTAL</b><small>코스튬 대여 전문몰</small></span></a>
-      <nav class="desktopnav" aria-label="고객 메뉴">
-        <a href="{{ url_for('home') }}">대여상품</a>
-        <a href="{{ url_for('cart_view') }}">장바구니</a>
-        <a href="{{ url_for('order_lookup') }}">주문조회</a>
-        {% if member_user %}<a href="{{ url_for('mypage') }}">마이페이지</a>{% endif %}
-      </nav>
-      <div class="navaccount">
-        {% if member_user %}<span class="welcome">{{member_user.name}}님</span><form class="plainform" method="post" action="{{ url_for('member_logout') }}"><button class="textbutton" type="submit">로그아웃</button></form>{% else %}<a href="{{ url_for('member_login') }}">로그인</a><a class="signupmini" href="{{ url_for('member_signup') }}">회원가입</a>{% endif %}
-        {% if admin_user %}<a class="adminquick" href="{{url_for('dashboard')}}">관리자</a>{% endif %}
-      </div>
-      <details class="mobilemenu"><summary aria-label="메뉴 열기">☰</summary><div class="mobilemenubody"><a href="{{url_for('home')}}">대여상품</a><a href="{{url_for('cart_view')}}">장바구니</a><a href="{{url_for('order_lookup')}}">주문조회</a>{% if member_user %}<a href="{{url_for('mypage')}}">마이페이지</a><form method="post" action="{{url_for('member_logout')}}"><button>로그아웃</button></form>{% else %}<a href="{{url_for('member_login')}}">로그인</a><a href="{{url_for('member_signup')}}">회원가입</a>{% endif %}{% if admin_user %}<a href="{{url_for('dashboard')}}">관리자 화면</a>{% endif %}</div></details>
+  <div class="noticebar"><div class="wrap noticeinner"><span>💜 특별한 하루, COSTUME RENTAL과 함께하세요!</span><span class="noticehide">대여일 선택 · 실시간 재고 · 간편한 반납</span></div></div>
+  <header class="siteheader v34-header">
+    <div class="wrap v34-head-main">
+      <a class="shopbrand" href="{{ url_for('home') }}"><span class="brandmark">C</span><span><b>COSTUME RENTAL</b><small>빌리는 즐거움, 특별한 하루</small></span></a>
+      <form class="v34-head-search" action="{{url_for('home')}}#catalog" method="get"><input type="search" name="q" placeholder="어떤 의상을 찾고 계신가요?"><button aria-label="검색">⌕</button></form>
+      <div class="navaccount v34-account">{% if member_user %}<a href="{{url_for('mypage')}}">마이페이지</a><form class="plainform" method="post" action="{{url_for('member_logout')}}"><button class="textbutton">로그아웃</button></form>{% else %}<a href="{{url_for('member_login')}}">로그인</a><a href="{{url_for('member_signup')}}">회원가입</a>{% endif %}<a href="{{url_for('order_lookup')}}">주문조회</a><a class="v34-cart" href="{{url_for('cart_view')}}">🛒 장바구니</a>{% if admin_user %}<a class="adminquick" href="{{url_for('dashboard')}}">관리자</a>{% endif %}</div>
+      <details class="mobilemenu"><summary aria-label="메뉴 열기">☰</summary><div class="mobilemenubody"><a href="{{url_for('home')}}">대여상품</a><a href="{{url_for('cart_view')}}">장바구니</a><a href="{{url_for('order_lookup')}}">주문조회</a>{% for c in nav_categories %}<a href="{{url_for('home',category=c.slug)}}#catalog">{{c.name}}</a>{% endfor %}{% if member_user %}<a href="{{url_for('mypage')}}">마이페이지</a>{% else %}<a href="{{url_for('member_login')}}">로그인</a><a href="{{url_for('member_signup')}}">회원가입</a>{% endif %}{% if admin_user %}<a href="{{url_for('dashboard')}}">관리자 화면</a>{% endif %}</div></details>
     </div>
+    {% if nav_categories %}<nav class="v34-category-nav"><div class="wrap"><a class="v34-allcat" href="{{url_for('home')}}#catalog">☰ 전체 카테고리</a>{% for c in nav_categories %}<a href="{{url_for('home',category=c.slug)}}#catalog">{{c.name}}</a>{% endfor %}<a href="{{url_for('order_lookup')}}">대여가이드</a></div></nav>{% endif %}
   </header>
-  {% if admin_user %}<div class="adminbar"><div class="wrap adminnav"><strong>ADMIN</strong><a href="{{url_for('dashboard')}}">대시보드</a><a href="{{url_for('products_admin')}}">상품</a><a href="{{url_for('inventory_admin')}}">재고</a><a href="{{url_for('admin_calendar')}}">예약달력</a><a href="{{url_for('reservations')}}">주문</a><a href="{{url_for('customers_admin')}}">고객</a><a href="{{url_for('settlements_admin')}}">보증금</a><a href="{{url_for('payment_adjustments_admin')}}">결제조정</a><a href="{{url_for('notifications_admin')}}">알림</a><a href="{{url_for('admin_payment_settings')}}">결제연동</a><a href="{{url_for('admin_settings')}}">설정</a><a href="{{url_for('admin_legal_documents')}}">약관</a><a href="{{url_for('admin_password')}}">비밀번호</a><form class="plainform" method="post" action="{{url_for('admin_logout')}}"><button class="adminlogout">로그아웃</button></form></div></div>{% endif %}
+  {% if admin_user %}<div class="adminbar"><div class="wrap adminnav"><strong>ADMIN</strong><a href="{{url_for('dashboard')}}">대시보드</a><a href="{{url_for('admin_home_content')}}">메인관리</a><a href="{{url_for('products_admin')}}">상품</a><a href="{{url_for('inventory_admin')}}">재고</a><a href="{{url_for('admin_calendar')}}">예약달력</a><a href="{{url_for('reservations')}}">주문</a><a href="{{url_for('customers_admin')}}">고객</a><a href="{{url_for('settlements_admin')}}">보증금</a><a href="{{url_for('payment_adjustments_admin')}}">결제조정</a><a href="{{url_for('notifications_admin')}}">알림</a><a href="{{url_for('admin_payment_settings')}}">결제연동</a><a href="{{url_for('admin_settings')}}">설정</a><a href="{{url_for('admin_legal_documents')}}">약관</a><a href="{{url_for('admin_password')}}">비밀번호</a><form class="plainform" method="post" action="{{url_for('admin_logout')}}"><button class="adminlogout">로그아웃</button></form></div></div>{% endif %}
   <main class="wrap sitecontent">{% with messages=get_flashed_messages() %}{% if messages %}{% for m in messages %}<div class="flash">{{ m }}</div>{% endfor %}{% endif %}{% endwith %}{% block content %}{% endblock %}</main>
-  <footer class="sitefooter"><div class="wrap footergrid"><div class="footerbrand"><span class="brandmark smallmark">C</span><div><b>COSTUME RENTAL</b><p>특별한 하루를 위한 코스튬을 필요한 기간만 간편하게 대여하세요.</p></div></div><div><b>고객안내</b><a href="{{url_for('order_lookup')}}">비회원 주문조회</a>{% if member_user %}<a href="{{url_for('mypage')}}">마이페이지</a>{% else %}<a href="{{url_for('member_login')}}">회원 로그인</a>{% endif %}</div><div><b>이용안내</b><a href="{{url_for('legal_policy',doc_type='terms')}}">이용약관</a><a href="{{url_for('legal_policy',doc_type='privacy')}}">개인정보처리방침</a><a href="{{url_for('legal_policy',doc_type='rental')}}">대여·파손/분실 규정</a></div></div><div class="wrap footercopy"><span>코스튬 대여몰 V3.3.2</span><span>운영 전 디자인/기능 테스트 버전</span></div></footer>
+  <footer class="sitefooter"><div class="wrap footergrid"><div class="footerbrand"><span class="brandmark smallmark">C</span><div><b>COSTUME RENTAL</b><p>특별한 하루를 위한 코스튬을 필요한 기간만 간편하게 대여하세요.</p></div></div><div><b>고객안내</b><a href="{{url_for('order_lookup')}}">비회원 주문조회</a>{% if member_user %}<a href="{{url_for('mypage')}}">마이페이지</a>{% else %}<a href="{{url_for('member_login')}}">회원 로그인</a>{% endif %}</div><div><b>이용안내</b><a href="{{url_for('legal_policy',doc_type='terms')}}">이용약관</a><a href="{{url_for('legal_policy',doc_type='privacy')}}">개인정보처리방침</a><a href="{{url_for('legal_policy',doc_type='rental')}}">대여·파손/분실 규정</a></div></div><div class="wrap footercopy"><span>코스튬 대여몰 V3.4</span><span>운영 전 디자인/기능 테스트 버전</span></div></footer>
   <script src="https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
   <script>
   window.openPostcodeSearch=function(zipId,addressId,detailId){

@@ -1,5 +1,5 @@
 {% extends 'base.html' %}{% block title %}추가결제{% endblock %}{% block content %}
-<div class="pagehead"><div><span class="eyebrow">ADDITIONAL PAYMENT V3.3</span><h1>추가결제</h1><p class="muted">예약 변경으로 발생한 차액만 추가 결제합니다.</p></div><a class="button ghost" href="{{url_for('order_complete',order_no=order.order_no,phone=order.phone)}}">주문 확인</a></div>
+<div class="pagehead"><div><span class="eyebrow">ADDITIONAL PAYMENT V3.4</span><h1>추가결제</h1><p class="muted">예약 변경으로 발생한 차액만 추가 결제합니다.</p></div><a class="button ghost" href="{{url_for('order_complete',order_no=order.order_no,phone=order.phone)}}">주문 확인</a></div>
 <div class="payment-layout">
 <section class="panel">
   <div class="payment-order-head"><div><span class="muted">주문번호</span><h2>{{order.order_no}}</h2></div><span class="badge">{{adj.status}}</span></div>

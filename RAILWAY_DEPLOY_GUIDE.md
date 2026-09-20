@@ -1,4 +1,4 @@
-# 코스튬 대여몰 V3.3.2 - Railway 테스트 서버 배포 가이드
+# 코스튬 대여몰 V3.4 - Railway 테스트 서버 배포 가이드
 
 ## 1. 이 버전의 저장 구조
 - 로컬 실행: 기존처럼 프로젝트 폴더의 `rental.db`, `static/uploads/` 사용
@@ -13,7 +13,7 @@
 ## 2. GitHub에 올리기
 1. 이 폴더의 파일 전체를 새 GitHub 저장소에 업로드합니다.
 2. `.env`, `.secret_key`, `.payment_secrets.json`, `.notification_secrets.json`은 커밋하지 않습니다.
-3. 테스트용 `rental.db`와 `static/uploads/`는 최초 Railway 테스트 데이터를 만들기 위해 V3.3.2에는 포함되어 있습니다.
+3. 테스트용 `rental.db`와 `static/uploads/`는 최초 Railway 테스트 데이터를 만들기 위해 V3.4에는 포함되어 있습니다.
 
 ## 3. Railway 프로젝트 만들기
 1. Railway 로그인
@@ -84,5 +84,5 @@ Railway 서비스 → Settings/Networking → Generate Domain
 10. 취소/부분환불/보증금 환급 흐름 확인
 
 ## 9. 주의: SQLite 운영 범위
-V3.3.2은 테스트 서버 단계이므로 SQLite + Gunicorn 1 worker를 사용합니다.
+V3.4은 테스트 서버 단계이므로 SQLite + Gunicorn 1 worker를 사용합니다.
 실제 고객이 다수 동시 접속하는 정식 운영 단계에서는 PostgreSQL 전환을 권장합니다.

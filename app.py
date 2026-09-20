@@ -86,7 +86,7 @@ def health():
         conn.close()
         if ok != 'ok':
             return jsonify({'status':'error','database':ok}), 503
-        return jsonify({'status':'ok','database':'ok','version':'V3.4'}), 200
+        return jsonify({'status':'ok','database':'ok','version':'V3.4.1'}), 200
     except Exception as e:
         return jsonify({'status':'error','error':str(e)}), 503
 

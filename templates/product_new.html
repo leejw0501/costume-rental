@@ -13,5 +13,9 @@
 <label class="full">구성품<textarea name="components" rows="4" placeholder="예: 로브, 허리끈, 모자 / 가발은 별도"></textarea></label>
 <label class="full">사이즈 안내<textarea name="size_guide" rows="4" placeholder="예: M 가슴 90~96cm / 총장 125cm"></textarea></label>
 <label class="full">대여 시 주의사항<textarea name="rental_notes" rows="5" placeholder="오염, 분실, 세탁, 반납 시 주의사항 등을 입력하세요."></textarea></label>
+<div class="full"><hr><h2>상세페이지</h2><p class="muted">상세 이미지는 등록한 순서대로 세로로 표시됩니다. 등록 후 순서 변경, 교체, 설명 추가를 할 수 있습니다.</p></div>
+<label class="full">상세 설명 첫 문단<textarea name="detail_intro" rows="4" placeholder="선택 입력: 상세 이미지 위에 표시할 설명"></textarea></label>
+<label class="full">상세 이미지 (여러 장)<input type="file" name="detail_images" accept="image/png,image/jpeg,image/webp,image/gif" multiple></label>
+<label class="full">공통 대여안내<select name="show_common_rental_guide"><option value="1">상품 하단에 표시</option><option value="0">표시하지 않음</option></select></label>
 <div class="full formbuttons"><button>상품 등록</button><a class="button ghost" href="{{url_for('products_admin')}}">취소</a></div>
 </form>{% endblock %}

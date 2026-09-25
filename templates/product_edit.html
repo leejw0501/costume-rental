@@ -13,8 +13,26 @@
 <label class="full">구성품<textarea name="components" rows="4">{{product.components}}</textarea></label>
 <label class="full">사이즈 안내<textarea name="size_guide" rows="4">{{product.size_guide}}</textarea></label>
 <label class="full">대여 시 주의사항<textarea name="rental_notes" rows="5">{{product.rental_notes}}</textarea></label>
+<label class="full">공통 대여안내<select name="show_common_rental_guide"><option value="1" {% if product.show_common_rental_guide %}selected{% endif %}>상품 하단에 표시</option><option value="0" {% if not product.show_common_rental_guide %}selected{% endif %}>표시하지 않음</option></select></label>
 <div class="full"><button>상품정보 저장</button></div>
 </form>
+<section id="detail-editor"><h2>상세페이지 관리</h2><p class="muted">블록의 ☰ 부분을 끌어 순서를 바꾸고 저장하세요. 삭제 체크한 블록은 저장 시 제거됩니다.</p>
+<form method="post" enctype="multipart/form-data" action="{{url_for('update_product_detail',product_id=product.id)}}" class="panel" id="detailForm">
+<div id="detailBlockList">{% for block in detail_blocks %}<div class="detail-admin-block" draggable="true"><input type="hidden" name="block_order" value="{{block.id}}"><span class="drag-handle" title="끌어서 순서 변경">☰ 순서 이동</span><div class="block-move-buttons"><button type="button" data-direction="up" aria-label="위로 이동">↑ 위로</button><button type="button" data-direction="down" aria-label="아래로 이동">↓ 아래로</button></div>
+{% if block.block_type == 'image' %}<img src="{{url_for('uploaded_file',filename=block.content)}}" alt="상세 이미지 {{loop.index}}"><label>이 이미지 교체<input type="file" name="replace_{{block.id}}" accept="image/png,image/jpeg,image/webp,image/gif"></label>
+{% else %}<label>설명 텍스트<textarea name="text_{{block.id}}" rows="4">{{block.content}}</textarea></label>{% endif %}
+<label class="delete-detail"><input type="checkbox" name="delete_{{block.id}}" value="1"> 이 블록 삭제</label></div>{% else %}<p class="muted">아직 등록된 상세페이지가 없습니다.</p>{% endfor %}</div>
+<label>설명 텍스트 추가<textarea name="new_detail_text" rows="4" placeholder="새 설명은 맨 아래에 추가됩니다. 저장 후 순서를 옮길 수 있습니다."></textarea></label>
+<label>상세 이미지 추가<input type="file" name="new_detail_images" accept="image/png,image/jpeg,image/webp,image/gif" multiple><small class="muted">선택한 순서대로 맨 아래에 추가됩니다.</small></label>
+<button>상세페이지 저장</button></form></section>
+<script>
+(function(){const list=document.getElementById('detailBlockList');let moving=null;
+list.addEventListener('dragstart',e=>{moving=e.target.closest('.detail-admin-block');if(!moving)return;e.dataTransfer.effectAllowed='move';});
+list.addEventListener('dragover',e=>{const target=e.target.closest('.detail-admin-block');if(!moving||!target||target===moving)return;e.preventDefault();const y=target.getBoundingClientRect();list.insertBefore(moving,e.clientY<y.top+y.height/2?target:target.nextSibling);});
+list.addEventListener('drop',e=>e.preventDefault());list.addEventListener('dragend',()=>moving=null);
+list.addEventListener('click',e=>{const button=e.target.closest('[data-direction]');if(!button)return;const block=button.closest('.detail-admin-block');if(button.dataset.direction==='up'&&block.previousElementSibling?.classList.contains('detail-admin-block'))list.insertBefore(block,block.previousElementSibling);if(button.dataset.direction==='down'&&block.nextElementSibling)list.insertBefore(block.nextElementSibling,block);});
+list.querySelectorAll('input,textarea').forEach(el=>el.addEventListener('dragstart',e=>e.stopPropagation()));})();
+</script>
 <h2>추가 상품사진</h2><div class="galleryadmin panel">{% for img in images %}<div class="galleryadminitem"><img src="{{url_for('uploaded_file',filename=img.image_filename)}}" alt=""><form method="post" action="{{url_for('delete_product_image',image_id=img.id)}}" onsubmit="return confirm('이 사진을 삭제하시겠습니까?');"><button class="dangerbtn small">삭제</button></form></div>{% else %}<p class="muted">추가 사진이 없습니다. 위에서 여러 장을 업로드할 수 있습니다.</p>{% endfor %}</div>
 <h2>사이즈 및 재고</h2><form method="post" action="{{url_for('update_sizes',product_id=product.id)}}" class="panel"><div class="sizegrid">{% for s in sizes %}<div class="sizebox"><b>{{s.size_name}}</b><label>재고<input type="number" name="stock_{{s.id}}" value="{{s.stock}}" min="0"></label></div>{% endfor %}</div><hr><div class="stockform"><input name="new_size" placeholder="새 사이즈 예: XL"><input type="number" name="new_stock" placeholder="재고" min="0"><button>재고 저장 / 사이즈 추가</button></div></form>
 {% for s in sizes %}<form method="post" action="{{url_for('delete_size',size_id=s.id)}}" class="inline" onsubmit="return confirm('{{s.size_name}} 사이즈를 삭제하시겠습니까?');"><button class="dangerbtn">{{s.size_name}} 삭제</button></form> {% endfor %}<p class="muted">예약 이력이 있는 사이즈는 삭제할 수 없으며, 대신 재고를 0으로 설정할 수 있습니다.</p>

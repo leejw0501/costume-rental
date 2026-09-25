@@ -309,3 +309,6 @@ body{background:#fff;color:var(--v34-ink)}
   .sitecontent.wrap{background:#fff;}
   .v34-home{background:#fff;}
 }
+
+/* Product description editor and customer detail page */
+#detail-editor{margin-top:32px}#detailForm{display:grid;gap:20px}.detail-admin-block{border:1px solid #dfe3e8;border-radius:12px;padding:16px;display:grid;gap:12px;background:#fff}.detail-admin-block img{max-width:280px;max-height:360px;object-fit:contain}.detail-admin-block label{display:block}.detail-admin-block textarea{width:100%;margin-top:6px}.detail-admin-block .drag-handle{cursor:grab;color:#626a75;font-weight:600;user-select:none}.detail-admin-block .delete-detail{color:#b23b3b}.detail-admin-block .delete-detail input{width:auto}.customer-detail-content{max-width:860px;margin:48px auto 0}.customer-detail-content>img{display:block;width:100%;height:auto;margin:0}.detail-text-block{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.8;padding:24px 14px}.common-rental-guide{margin-top:28px}

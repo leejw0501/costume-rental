@@ -22,6 +22,7 @@
   </form>
 </section>
 
+{% if detail_blocks or common_rental_guide %}<section class="customer-detail-content" aria-label="상품 상세페이지"><h2>상품 상세정보</h2>{% for block in detail_blocks %}{% if block.block_type == 'image' %}<img loading="lazy" src="{{url_for('uploaded_file',filename=block.content)}}" alt="{{product.name}} 상세 이미지 {{loop.index}}">{% else %}<div class="detail-text-block">{{block.content}}</div>{% endif %}{% endfor %}{% if common_rental_guide %}<article class="panel common-rental-guide"><h2>공통 대여안내</h2><div class="preline">{{common_rental_guide}}</div></article>{% endif %}</section>{% endif %}
 <section class="detailsections"><article class="panel"><h2>구성품</h2><div class="preline">{{product.components or '구성품 정보가 아직 등록되지 않았습니다.'}}</div></article><article class="panel"><h2>사이즈 안내</h2><div class="preline">{{product.size_guide or '사이즈 정보가 아직 등록되지 않았습니다.'}}</div><div class="sizestock">{% for s in sizes %}<span>{{s.size_name}} <b>{{s.stock}}</b>개</span>{% endfor %}</div></article><article class="panel warningpanel"><h2>대여 시 주의사항</h2><div class="preline">{{product.rental_notes or '상품을 깨끗하게 사용해주시고 구성품을 모두 확인하여 반납해주세요.'}}</div></article></section>
 <script>
 document.querySelectorAll('.thumbbtn').forEach(function(b){b.addEventListener('click',function(){var m=document.getElementById('mainProductImage');if(m)m.src=this.dataset.src;document.querySelectorAll('.thumbbtn').forEach(x=>x.classList.remove('active'));this.classList.add('active');});});

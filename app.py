@@ -47,7 +47,7 @@ else:
         SECRET_FILE.write_text(app.secret_key, encoding='utf-8')
     except OSError:
         pass
-app.config['MAX_CONTENT_LENGTH'] = 8 * 1024 * 1024
+app.config['MAX_CONTENT_LENGTH'] = 40 * 1024 * 1024
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=8)
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
@@ -86,7 +86,7 @@ def health():
         conn.close()
         if ok != 'ok':
             return jsonify({'status':'error','database':ok}), 503
-        return jsonify({'status':'ok','database':'ok','version':'V3.4.1'}), 200
+        return jsonify({'status':'ok','database':'ok','version':'V3.5'}), 200
     except Exception as e:
         return jsonify({'status':'error','error':str(e)}), 503
 
@@ -262,6 +262,15 @@ def init_db():
     add_column_if_missing(conn, 'products', 'size_guide', "TEXT DEFAULT ''")
     add_column_if_missing(conn, 'products', 'rental_notes', "TEXT DEFAULT ''")
     add_column_if_missing(conn, 'products', 'extra_daily_price', 'INTEGER NOT NULL DEFAULT 0')
+    add_column_if_missing(conn, 'products', 'show_common_rental_guide', 'INTEGER NOT NULL DEFAULT 1')
+    conn.execute("""CREATE TABLE IF NOT EXISTS product_detail_blocks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_id INTEGER NOT NULL,
+        block_type TEXT NOT NULL CHECK(block_type IN ('image','text')),
+        content TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE CASCADE
+    )""")
     conn.execute("""CREATE TABLE IF NOT EXISTS product_images (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         product_id INTEGER NOT NULL,
@@ -2026,8 +2035,10 @@ def product_detail(product_id):
     if not product or not product['is_active']:
         conn.close(); return '현재 볼 수 없는 상품입니다.',404
     images=conn.execute('SELECT * FROM product_images WHERE product_id=? ORDER BY sort_order,id',(product_id,)).fetchall()
+    detail_blocks=conn.execute('SELECT * FROM product_detail_blocks WHERE product_id=? ORDER BY sort_order,id',(product_id,)).fetchall()
+    common_rental_guide=get_text_setting(conn,'common_rental_guide') if product['show_common_rental_guide'] else ''
     conn.close()
-    return render_template('product_detail.html',product=product,sizes=sizes,images=images,today=date.today().isoformat())
+    return render_template('product_detail.html',product=product,sizes=sizes,images=images,detail_blocks=detail_blocks,common_rental_guide=common_rental_guide,today=date.today().isoformat())
 
 
 @app.route('/product/<int:product_id>/quick-rent', methods=['POST'])
@@ -2971,8 +2982,8 @@ def new_product():
         image_filename = save_image(request.files.get('image'))
         if not name or not category_ids:
             flash('상품명과 카테고리를 하나 이상 선택해주세요.'); conn.close(); return redirect(request.url)
-        cur = conn.execute('''INSERT INTO products(name,category,size,stock,daily_price,extra_daily_price,deposit,description,image_filename,is_active,components,size_guide,rental_notes)
-                              VALUES(?,?,?,?,?,?,?,?,?,1,?,?,?)''', (name,'','',0,daily_price,extra_daily_price,deposit,description,image_filename,components,size_guide,rental_notes))
+        cur = conn.execute('''INSERT INTO products(name,category,size,stock,daily_price,extra_daily_price,deposit,description,image_filename,is_active,components,size_guide,rental_notes,show_common_rental_guide)
+                              VALUES(?,?,?,?,?,?,?,?,?,1,?,?,?,?)''', (name,'','',0,daily_price,extra_daily_price,deposit,description,image_filename,components,size_guide,rental_notes,1 if request.form.get('show_common_rental_guide')=='1' else 0))
         pid = cur.lastrowid
         set_product_categories(conn,pid,category_ids)
         parsed = []
@@ -2991,6 +3002,14 @@ def new_product():
         for order,file in enumerate(request.files.getlist('gallery_images')):
             fn=save_image(file)
             if fn: conn.execute('INSERT INTO product_images(product_id,image_filename,sort_order,created_at) VALUES(?,?,?,?)',(pid,fn,order,datetime.now().strftime('%Y-%m-%d %H:%M')))
+        detail_order=0
+        intro=request.form.get('detail_intro','').strip()
+        if intro:
+            conn.execute('INSERT INTO product_detail_blocks(product_id,block_type,content,sort_order) VALUES(?,?,?,?)',(pid,'text',intro,detail_order)); detail_order+=1
+        for file in request.files.getlist('detail_images'):
+            fn=save_image(file)
+            if fn:
+                conn.execute('INSERT INTO product_detail_blocks(product_id,block_type,content,sort_order) VALUES(?,?,?,?)',(pid,'image',fn,detail_order)); detail_order+=1
         conn.commit(); conn.close(); flash('상품이 등록되었습니다.')
         return redirect(url_for('products_admin'))
     default_deposit = get_setting(conn,'default_deposit',DEFAULT_DEPOSIT)
@@ -3012,8 +3031,8 @@ def edit_product(product_id):
             price=max(0,int(request.form.get('daily_price','0') or 0)); extra_price=max(0,int(request.form.get('extra_daily_price','0') or 0)); deposit=max(0,int(request.form.get('deposit','0') or 0))
         except ValueError:
             flash('가격을 숫자로 입력해주세요.'); conn.close(); return redirect(request.url)
-        conn.execute('UPDATE products SET name=?,daily_price=?,extra_daily_price=?,deposit=?,description=?,components=?,size_guide=?,rental_notes=?,is_active=? WHERE id=?',
-                     (name,price,extra_price,deposit,request.form.get('description','').strip(),request.form.get('components','').strip(),request.form.get('size_guide','').strip(),request.form.get('rental_notes','').strip(),1 if request.form.get('is_active')=='1' else 0,product_id))
+        conn.execute('UPDATE products SET name=?,daily_price=?,extra_daily_price=?,deposit=?,description=?,components=?,size_guide=?,rental_notes=?,is_active=?,show_common_rental_guide=? WHERE id=?',
+                     (name,price,extra_price,deposit,request.form.get('description','').strip(),request.form.get('components','').strip(),request.form.get('size_guide','').strip(),request.form.get('rental_notes','').strip(),1 if request.form.get('is_active')=='1' else 0,1 if request.form.get('show_common_rental_guide')=='1' else 0,product_id))
         set_product_categories(conn,product_id,category_ids)
         filename = save_image(request.files.get('image'))
         if filename:
@@ -3026,7 +3045,56 @@ def edit_product(product_id):
             fn=save_image(file)
             if fn: conn.execute('INSERT INTO product_images(product_id,image_filename,sort_order,created_at) VALUES(?,?,?,?)',(product_id,fn,idx,datetime.now().strftime('%Y-%m-%d %H:%M')))
         conn.commit(); conn.close(); flash('상품 정보를 수정했습니다.'); return redirect(url_for('edit_product', product_id=product_id))
-    images=conn.execute('SELECT * FROM product_images WHERE product_id=? ORDER BY sort_order,id',(product_id,)).fetchall(); conn.close(); return render_template('product_edit.html', product=product, sizes=sizes, images=images, categories=categories, selected_category_ids=selected_category_ids)
+    images=conn.execute('SELECT * FROM product_images WHERE product_id=? ORDER BY sort_order,id',(product_id,)).fetchall()
+    detail_blocks=conn.execute('SELECT * FROM product_detail_blocks WHERE product_id=? ORDER BY sort_order,id',(product_id,)).fetchall()
+    conn.close(); return render_template('product_edit.html', product=product, sizes=sizes, images=images, detail_blocks=detail_blocks, categories=categories, selected_category_ids=selected_category_ids)
+
+
+
+@app.route('/admin/products/<int:product_id>/detail', methods=['POST'])
+def update_product_detail(product_id):
+    conn=db()
+    if not conn.execute('SELECT id FROM products WHERE id=?',(product_id,)).fetchone():
+        conn.close(); return '상품이 없습니다.',404
+    blocks=conn.execute('SELECT * FROM product_detail_blocks WHERE product_id=? ORDER BY sort_order,id',(product_id,)).fetchall()
+    block_by_id={str(row['id']):row for row in blocks}
+    ordered=request.form.getlist('block_order')
+    if len(ordered)!=len(blocks) or set(ordered)!=set(block_by_id):
+        conn.close(); return '상세페이지 순서가 올바르지 않습니다. 다시 열어주세요.',400
+    files_to_remove=[]
+    try:
+        for order,block_id in enumerate(ordered):
+            row=block_by_id[block_id]
+            if request.form.get(f'delete_{block_id}')=='1':
+                conn.execute('DELETE FROM product_detail_blocks WHERE id=?',(row['id'],))
+                if row['block_type']=='image': files_to_remove.append(row['content'])
+                continue
+            content=row['content']
+            if row['block_type']=='text':
+                content=request.form.get(f'text_{block_id}','').strip()
+                if not content:
+                    conn.execute('DELETE FROM product_detail_blocks WHERE id=?',(row['id'],)); continue
+            else:
+                replacement=save_image(request.files.get(f'replace_{block_id}'))
+                if replacement:
+                    files_to_remove.append(content); content=replacement
+            conn.execute('UPDATE product_detail_blocks SET content=?,sort_order=? WHERE id=?',(content,order,row['id']))
+        next_order=len(ordered)
+        new_text=request.form.get('new_detail_text','').strip()
+        if new_text:
+            conn.execute('INSERT INTO product_detail_blocks(product_id,block_type,content,sort_order) VALUES(?,?,?,?)',(product_id,'text',new_text,next_order)); next_order+=1
+        for file in request.files.getlist('new_detail_images'):
+            filename=save_image(file)
+            if filename:
+                conn.execute('INSERT INTO product_detail_blocks(product_id,block_type,content,sort_order) VALUES(?,?,?,?)',(product_id,'image',filename,next_order)); next_order+=1
+        conn.commit()
+    finally:
+        conn.close()
+    for filename in files_to_remove:
+        try: (UPLOAD_DIR/filename).unlink(missing_ok=True)
+        except OSError: pass
+    flash('상세페이지를 저장했습니다.')
+    return redirect(url_for('edit_product',product_id=product_id)+'#detail-editor')
 
 
 
@@ -3081,9 +3149,12 @@ def delete_product(product_id):
     else:
         p=conn.execute('SELECT image_filename FROM products WHERE id=?',(product_id,)).fetchone()
         gallery=conn.execute('SELECT image_filename FROM product_images WHERE product_id=?',(product_id,)).fetchall()
+        detail_images=conn.execute("SELECT content FROM product_detail_blocks WHERE product_id=? AND block_type='image'",(product_id,)).fetchall()
+        conn.execute('DELETE FROM product_detail_blocks WHERE product_id=?',(product_id,))
         conn.execute('DELETE FROM product_images WHERE product_id=?',(product_id,)); conn.execute('DELETE FROM product_sizes WHERE product_id=?',(product_id,)); conn.execute('DELETE FROM products WHERE id=?',(product_id,)); conn.commit()
         files=[p['image_filename']] if p and p['image_filename'] else []
         files += [g['image_filename'] for g in gallery]
+        files += [g['content'] for g in detail_images]
         for fn in files:
             try:(UPLOAD_DIR/fn).unlink(missing_ok=True)
             except OSError:pass
@@ -3742,10 +3813,13 @@ def admin_settings():
         raw_holidays = request.form.get('holiday_dates','').strip()
         valid_holidays = sorted(parse_holidays(raw_holidays))
         set_setting(conn,'holiday_dates','\n'.join(valid_holidays))
+        set_setting(conn,'common_rental_guide',request.form.get('common_rental_guide','').strip())
         conn.commit(); conn.close(); flash('운영 설정을 저장했습니다. 취소수수료 규정은 저장 즉시 이후 취소 건부터 적용됩니다.')
         return redirect(url_for('admin_settings'))
-    settings = get_fees(conn); conn.close()
-    return render_template('settings.html', settings=settings)
+    settings = get_fees(conn)
+    common_rental_guide=get_text_setting(conn,'common_rental_guide')
+    conn.close()
+    return render_template('settings.html', settings=settings, common_rental_guide=common_rental_guide)
 
 
 @app.route('/admin/calendar')

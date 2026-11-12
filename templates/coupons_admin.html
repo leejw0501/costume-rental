@@ -1,0 +1,17 @@
+{% extends 'base.html' %}{% block title %}쿠폰 관리{% endblock %}{% block content %}
+<h1>쿠폰 관리</h1><p>할인은 상품 대여료에만 적용됩니다. 배송비와 보증금은 할인되지 않습니다.</p>
+<section class="card"><h2>새 쿠폰 만들기</h2><form method="post" class="formgrid modernform"><input type="hidden" name="csrf_token" value="{{csrf_token}}"><input type="hidden" name="action" value="create">
+<label>쿠폰 이름<input name="name" maxlength="80" required></label>
+<label>할인 방식<select name="discount_type"><option value="fixed">정액 할인 (원)</option><option value="percent">정률 할인 (%)</option></select></label>
+<label>할인값<input type="number" name="discount_value" min="1" required></label><label>정률 최대 할인금액 (0이면 제한 없음)<input type="number" name="max_discount" min="0" value="0"></label>
+<label>최소 대여금액 (원)<input type="number" name="minimum_amount" min="0" value="0"></label>
+<label>발급 시작일<input type="date" name="issue_start" value="{{today}}" required></label><label>발급 종료일<input type="date" name="issue_end" required></label>
+<label>사용 시작일<input type="date" name="valid_start" value="{{today}}" required></label><label>사용 종료일<input type="date" name="valid_end" required></label>
+<label><input type="checkbox" name="signup_auto" value="1"> 발급 기간 중 신규 회원에게 자동 발급</label><button class="button primary">쿠폰 만들기</button></form></section>
+<section class="card"><h2>쿠폰 목록</h2><p>종료일은 한국 시간 기준 해당 날짜 23:59까지입니다. 같은 쿠폰은 회원당 한 번만 발급됩니다.</p>
+{% for c in coupons %}<article style="border:1px solid #ddd;padding:16px;margin:12px 0;border-radius:8px"><h3>{{c.name}} {% if not c.is_active %}(중지됨){% endif %}</h3>
+<p>{{c.discount_value}}{{'%' if c.discount_type=='percent' else '원'}} 할인 · 최소 대여료 {{'{:,}'.format(c.minimum_amount)}}원 {% if c.discount_type=='percent' and c.max_discount %}· 최대 {{'{:,}'.format(c.max_discount)}}원{% endif %}<br>발급 {{c.issue_start}} ~ {{c.issue_end}} · 사용 {{c.valid_start}} ~ {{c.valid_end}}<br>신규 가입 자동발급: {{'사용' if c.signup_auto else '사용 안 함'}} · 발급 {{c.issued}}건 · 결제 완료 {{c.used}}건</p>
+<form method="post"><input type="hidden" name="csrf_token" value="{{csrf_token}}"><input type="hidden" name="action" value="issue"><input type="hidden" name="coupon_id" value="{{c.id}}"><label>발급 대상 <select name="target"><option value="one">선택 회원</option><option value="all">전체 회원</option></select></label> <input name="member_login_id" placeholder="선택 회원 아이디"> <button class="button soft">발급</button></form>
+<form method="post" style="margin-top:8px"><input type="hidden" name="csrf_token" value="{{csrf_token}}"><input type="hidden" name="action" value="toggle"><input type="hidden" name="coupon_id" value="{{c.id}}"><button class="button soft">{{'쿠폰 중지' if c.is_active else '쿠폰 재개'}}</button></form></article>{% else %}<p>등록된 쿠폰이 없습니다.</p>{% endfor %}</section>
+<p>미결제 주문을 취소하면 유효기간이 남은 쿠폰을 다시 사용할 수 있습니다. 결제 완료 후 취소한 쿠폰은 자동 복구되지 않습니다.</p>
+{% endblock %}

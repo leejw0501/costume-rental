@@ -1,0 +1,5 @@
+{% extends 'base.html' %}{% block title %}내 쿠폰{% endblock %}{% block content %}
+<h1>내 쿠폰</h1><p>한 주문에 쿠폰 한 장을 사용할 수 있습니다. 할인은 대여료에만 적용됩니다.</p>
+{% for c in coupons %}<div class="card" style="margin:12px 0;padding:16px"><h2>{{c.name}}</h2><p>{{c.discount_value}}{{'%' if c.discount_type=='percent' else '원'}} 할인 · 최소 대여료 {{'{:,}'.format(c.minimum_amount)}}원 {% if c.discount_type=='percent' and c.max_discount %}· 최대 {{'{:,}'.format(c.max_discount)}}원{% endif %}<br>사용 기간 {{c.valid_start}} ~ {{c.valid_end}}</p><b>{% if c.locked %}{{'사용 완료' if c.payment_status=='결제완료' else '주문에 적용됨'}}{% elif not c.is_active %}사용 중지{% elif today < c.valid_start %}사용 예정{% elif today > c.valid_end %}기간 만료{% else %}사용 가능{% endif %}</b></div>{% else %}<p>보유한 쿠폰이 없습니다.</p>{% endfor %}
+<p>미결제 주문을 취소하면 사용 기간이 남은 쿠폰은 다시 사용할 수 있습니다. 결제 완료 후 취소한 쿠폰은 자동 복구되지 않습니다.</p><a href="{{url_for('mypage')}}">마이페이지로</a>
+{% endblock %}

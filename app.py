@@ -16,6 +16,8 @@ import urllib.request
 import urllib.error
 import urllib.parse
 from functools import wraps
+from xml.etree.ElementTree import Element, SubElement, tostring
+import re
 
 BASE = Path(__file__).resolve().parent
 # Railway Volume이 연결되면 RAILWAY_VOLUME_MOUNT_PATH(예: /data)를 영구 저장소로 사용합니다.
@@ -86,7 +88,7 @@ def health():
         conn.close()
         if ok != 'ok':
             return jsonify({'status':'error','database':ok}), 503
-        return jsonify({'status':'ok','database':'ok','version':'V3.5'}), 200
+        return jsonify({'status':'ok','database':'ok','version':'V3.9'}), 200
     except Exception as e:
         return jsonify({'status':'error','error':str(e)}), 503
 
@@ -263,6 +265,8 @@ def init_db():
     add_column_if_missing(conn, 'products', 'rental_notes', "TEXT DEFAULT ''")
     add_column_if_missing(conn, 'products', 'extra_daily_price', 'INTEGER NOT NULL DEFAULT 0')
     add_column_if_missing(conn, 'products', 'show_common_rental_guide', 'INTEGER NOT NULL DEFAULT 1')
+    for field in ('seo_title','seo_description','image_alt'):
+        add_column_if_missing(conn, 'products', field, "TEXT NOT NULL DEFAULT ''")
     conn.execute("""CREATE TABLE IF NOT EXISTS product_detail_blocks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         product_id INTEGER NOT NULL,
@@ -317,7 +321,27 @@ def init_db():
     add_column_if_missing(conn, 'reservations', 'paid_at', "TEXT DEFAULT ''")
     add_column_if_missing(conn, 'reservations', 'order_source', "TEXT NOT NULL DEFAULT '온라인'")
     add_column_if_missing(conn, 'reservations', 'member_id', 'INTEGER')
+    add_column_if_missing(conn, 'member_accounts', 'login_id', 'TEXT')
+    conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS member_login_id_unique ON member_accounts(login_id COLLATE NOCASE) WHERE login_id IS NOT NULL')
     add_column_if_missing(conn, 'member_accounts', 'toss_customer_key', "TEXT DEFAULT ''")
+    add_column_if_missing(conn, 'reservations', 'coupon_discount', 'INTEGER NOT NULL DEFAULT 0')
+    conn.executescript("""
+    CREATE TABLE IF NOT EXISTS coupon_definitions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
+        discount_type TEXT NOT NULL, discount_value INTEGER NOT NULL,
+        max_discount INTEGER NOT NULL DEFAULT 0, minimum_amount INTEGER NOT NULL DEFAULT 0,
+        issue_start TEXT NOT NULL, issue_end TEXT NOT NULL,
+        valid_start TEXT NOT NULL, valid_end TEXT NOT NULL,
+        signup_auto INTEGER NOT NULL DEFAULT 0, is_active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS member_coupons (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, coupon_id INTEGER NOT NULL REFERENCES coupon_definitions(id),
+        member_id INTEGER NOT NULL REFERENCES member_accounts(id), issued_at TEXT NOT NULL,
+        reservation_id INTEGER REFERENCES reservations(id), UNIQUE(coupon_id, member_id)
+    );
+    CREATE INDEX IF NOT EXISTS member_coupons_member_idx ON member_coupons(member_id);
+    """)
     add_column_if_missing(conn, 'reservations', 'payment_token', "TEXT DEFAULT ''")
     add_column_if_missing(conn, 'reservations', 'payment_failure_reason', "TEXT DEFAULT ''")
     add_column_if_missing(conn, 'reservations', 'payment_updated_at', "TEXT DEFAULT ''")
@@ -379,6 +403,8 @@ def init_db():
     add_column_if_missing(conn, 'payment_adjustments', 'toss_raw_json', "TEXT DEFAULT ''")
     add_column_if_missing(conn, 'payment_adjustments', 'provider_refunded_amount', 'INTEGER NOT NULL DEFAULT 0')
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_adjustments_token ON payment_adjustments(token) WHERE token<>''")
+
+    add_column_if_missing(conn, "shop_categories", "parent_id", "INTEGER REFERENCES shop_categories(id)")
 
     # 기존 문자열 카테고리를 V3.4 카테고리 테이블로 자동 이관합니다.
     legacy_cats=conn.execute("SELECT DISTINCT TRIM(category) name FROM products WHERE COALESCE(TRIM(category),'')<>'' ORDER BY name").fetchall()
@@ -544,6 +570,16 @@ def init_db():
     for k, v in defaults.items():
         conn.execute('INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)', (k, v))
 
+    # V3.9 최초 이전 시 기본값만 변경하고 운영자가 지정한 값은 보존합니다.
+    if not conn.execute("SELECT 1 FROM settings WHERE key='cosday_v39_setup'").fetchone():
+        for key, value in (('seo_site_name', '코스데이'), ('seo_public_url', 'https://cosday.co.kr')):
+            row = conn.execute('SELECT value FROM settings WHERE key=?', (key,)).fetchone()
+            if row is None:
+                conn.execute('INSERT INTO settings(key,value) VALUES(?,?)', (key,value))
+            elif not row['value'].strip() or (key == 'seo_site_name' and row['value'] == '코스튬 대여몰'):
+                conn.execute('UPDATE settings SET value=? WHERE key=?', (value,key))
+        conn.execute("INSERT INTO settings(key,value) VALUES('cosday_v39_setup','1')")
+
     # V2.1 최초 관리자 계정. 첫 로그인 후 반드시 비밀번호를 변경해야 합니다.
     if conn.execute('SELECT COUNT(*) c FROM admin_users').fetchone()['c'] == 0:
         conn.execute('''INSERT INTO admin_users(username,password_hash,display_name,must_change_password,is_active,created_at)
@@ -644,20 +680,7 @@ def init_db():
                 conn.execute('INSERT INTO reservation_items(reservation_id,product_id,size_id,qty,daily_price,extra_daily_price,rental_days,total_price,deposit_total) VALUES(?,?,?,?,?,?,?,?,?)',
                     (r['id'],r['product_id'],r['size_id'],r['qty'],pr['daily_price'],pr['extra_daily_price'] if 'extra_daily_price' in pr.keys() else 0,r['rental_days'],r['total_price'],r['deposit_total']))
 
-    count = conn.execute('SELECT COUNT(*) c FROM products').fetchone()['c']
-    if count == 0:
-        samples = [
-            ('마법사 로브 세트','마법사',15000,30000,'로브 + 모자 구성'),
-            ('천사 코스튬 세트','천사',18000,30000,'의상 + 날개 + 머리띠 구성'),
-            ('수도사 코스튬','종교/중세',16000,30000,'로브 + 허리끈 구성')
-        ]
-        for name, category, price, deposit, desc in samples:
-            cur = conn.execute('INSERT INTO products(name,category,size,stock,daily_price,deposit,description,image_filename,is_active) VALUES(?,?,?,?,?,?,?,?,1)',
-                               (name, category, '', 0, price, deposit, desc, ''))
-            pid = cur.lastrowid
-            sizes = [('M', 2), ('L', 2)] if '마법사' in name else ([('FREE', 2)] if '천사' in name else [('L', 2), ('XL', 1)])
-            conn.executemany('INSERT INTO product_sizes(product_id,size_name,stock) VALUES(?,?,?)',
-                             [(pid, s, st) for s, st in sizes])
+    # 신규 설치 시 샘플 상품을 생성하지 않습니다.
     conn.commit()
     conn.close()
 
@@ -854,7 +877,7 @@ def cancellation_quote(conn, order, as_of=None):
         rate=max(0,min(100,int(policy['cancel_same_day_fee_percent'] or 0))); label='대여 당일'
     else:
         rate=max(0,min(100,int(policy['cancel_after_start_fee_percent'] or 0))); label='대여 시작 후'
-    rental_fee=max(0,int(order['total_price'] or 0))
+    rental_fee=max(0,int(order['total_price'] or 0)-int(order['coupon_discount'] or 0))
     fee=min(rental_fee, round(rental_fee*rate/100))
     paid=net_order_paid(order) if order['payment_status']=='결제완료' else 0
     refund=max(0,paid-fee)
@@ -952,6 +975,22 @@ def rental_days(start, end):
     a = datetime.strptime(start, '%Y-%m-%d').date()
     b = datetime.strptime(end, '%Y-%m-%d').date()
     return (b - a).days + 1
+
+
+def order_cutoff_now():
+    return datetime.now(timezone(timedelta(hours=9)))
+
+
+def order_cutoff_open(start_date, now=None):
+    try:
+        start=datetime.strptime(start_date,'%Y-%m-%d').date()
+    except (ValueError,TypeError):
+        return False
+    deadline=datetime.combine(start-timedelta(days=1),datetime.min.time(),tzinfo=timezone(timedelta(hours=9))).replace(hour=14)
+    return (now or order_cutoff_now()) <= deadline
+
+
+ORDER_CUTOFF_MESSAGE='대여 시작일 전날 오후 2시까지 주문할 수 있습니다. 주문 마감된 날짜입니다. 다른 대여일을 선택해주세요.'
 
 def rental_line_price(base_price, extra_daily_price, days, qty=1):
     days = max(1, int(days))
@@ -1707,16 +1746,23 @@ def inject_user_context():
         'account_number': get_text_setting(conn,'deposit_account_number',''),
         'account_holder': get_text_setting(conn,'deposit_account_holder',''),
     }
-    nav_categories=conn.execute("SELECT id,name,slug FROM shop_categories WHERE is_active=1 ORDER BY sort_order,id LIMIT 10").fetchall()
+    nav_categories=conn.execute("SELECT id,name,slug FROM shop_categories WHERE is_active=1 AND parent_id IS NULL ORDER BY sort_order,id LIMIT 10").fetchall()
     conn.close()
     return {'admin_user': admin, 'member_user': member, 'deposit_bank': deposit_bank, 'card_payment_amount': card_payment_amount, 'nav_categories': nav_categories}
 
 
 def safe_next_url(value):
     value = (value or '').strip()
-    if value.startswith('/admin') and not value.startswith('//'):
-        return value
-    return url_for('dashboard')
+    parts=urllib.parse.urlsplit(value)
+    if parts.scheme or parts.netloc or parts.path.rstrip('/')=='/admin' or not parts.path.startswith('/admin/'):
+        return url_for('dashboard')
+    if parts.path.rstrip('/') in {'/admin/login','/admin/logout'}:
+        return url_for('dashboard')
+    try:
+        app.url_map.bind('').match(parts.path,method='GET')
+    except Exception:
+        return url_for('dashboard')
+    return value
 
 
 @app.route('/policy/<doc_type>')
@@ -1748,7 +1794,113 @@ def admin_legal_documents():
     edit=request.args.get('edit','terms')
     if edit not in valid: edit='terms'
     conn.close()
-    return render_template('legal_admin.html',docs=docs,counts=counts,edit=edit)
+    draft = None
+    if request.args.get('draft') == '1':
+        try:
+            draft = json.loads((BASE / 'legal_drafts.json').read_text(encoding='utf-8')).get(edit)
+        except (OSError, ValueError):
+            flash('초안 파일을 읽을 수 없습니다. 업데이트 파일의 legal_drafts.json을 확인해주세요.')
+    return render_template('legal_admin.html',docs=docs,counts=counts,edit=edit,draft=draft)
+
+
+
+# 쿠폰 일자 기준은 한국 시간이며 종료일을 포함합니다.
+def coupon_today():
+    return datetime.now(timezone(timedelta(hours=9))).date().isoformat()
+
+
+def issue_signup_coupons(conn, member_id):
+    today=coupon_today()
+    conn.execute("""INSERT OR IGNORE INTO member_coupons(coupon_id,member_id,issued_at)
+        SELECT id,?,? FROM coupon_definitions WHERE signup_auto=1 AND is_active=1
+        AND issue_start<=? AND issue_end>=? AND valid_end>=?""", (member_id,today,today,today,today))
+
+
+def coupon_available_sql():
+    # 취소된 미결제 주문의 쿠폰만 재사용됩니다. 실패한 결제는 재시도할 수 있으므로 보류합니다.
+    return "(mc.reservation_id IS NULL OR (r.status='취소' AND r.payment_status!='결제완료' AND COALESCE(r.paid_order_amount,0)=0))"
+
+
+def member_available_coupons(conn, member_id):
+    today=coupon_today()
+    return conn.execute("""SELECT mc.id member_coupon_id, c.* FROM member_coupons mc
+        JOIN coupon_definitions c ON c.id=mc.coupon_id LEFT JOIN reservations r ON r.id=mc.reservation_id
+        WHERE mc.member_id=? AND c.is_active=1 AND c.valid_start<=? AND c.valid_end>=? AND """+coupon_available_sql()+" ORDER BY c.valid_end,mc.id",(member_id,today,today)).fetchall()
+
+
+def coupon_discount_for(coupon, rental_total):
+    rental_total=max(0,int(rental_total))
+    if rental_total < int(coupon['minimum_amount']): return 0
+    if coupon['discount_type']=='percent':
+        discount=rental_total*int(coupon['discount_value'])//100
+        if int(coupon['max_discount'])>0: discount=min(discount,int(coupon['max_discount']))
+    else: discount=int(coupon['discount_value'])
+    return min(rental_total,max(0,discount))
+
+
+@app.route('/admin/coupons', methods=['GET','POST'])
+def admin_coupons():
+    conn=db()
+    if request.method=='POST':
+        if not hmac.compare_digest(session.get('coupon_csrf',''), request.form.get('csrf_token','')) or not session.get('coupon_csrf'):
+            conn.close(); return '잘못된 요청입니다.',400
+        action=request.form.get('action','')
+        if action=='create':
+            name=request.form.get('name','').strip(); kind=request.form.get('discount_type','')
+            try:
+                value=int(request.form.get('discount_value','0')); maximum=int(request.form.get('max_discount','0') or 0); minimum=int(request.form.get('minimum_amount','0') or 0)
+                dates=[request.form.get(k,'').strip() for k in ('issue_start','issue_end','valid_start','valid_end')]
+                for d in dates:
+                    if datetime.strptime(d,'%Y-%m-%d').strftime('%Y-%m-%d') != d: raise ValueError()
+                if not name or len(name)>80 or kind not in ('fixed','percent') or value<=0 or maximum<0 or minimum<0 or max(value,maximum,minimum)>1000000000 or (kind=='percent' and value>100) or dates[0]>dates[1] or dates[2]>dates[3] or dates[0]>dates[3]: raise ValueError()
+            except (ValueError,TypeError):
+                conn.close(); flash('쿠폰 이름, 할인값과 기간을 확인해주세요.'); return redirect(url_for('admin_coupons'))
+            conn.execute("""INSERT INTO coupon_definitions(name,discount_type,discount_value,max_discount,minimum_amount,issue_start,issue_end,valid_start,valid_end,signup_auto,is_active,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,1,?)""",
+                (name,kind,value,maximum,minimum,*dates,1 if request.form.get('signup_auto')=='1' else 0,coupon_today()))
+            conn.commit(); flash('쿠폰을 만들었습니다. 기존 회원에게는 별도로 발급해주세요.')
+        elif action=='issue':
+            try: cid=int(request.form.get('coupon_id','0'))
+            except ValueError: cid=0
+            today=coupon_today(); coupon=conn.execute('SELECT * FROM coupon_definitions WHERE id=? AND is_active=1 AND issue_start<=? AND issue_end>=? AND valid_end>=?',(cid,today,today,today)).fetchone()
+            if not coupon:
+                conn.close(); flash('발급 가능한 쿠폰과 발급 기간을 확인해주세요.'); return redirect(url_for('admin_coupons'))
+            target=request.form.get('target','')
+            if target=='all':
+                cur=conn.execute('INSERT OR IGNORE INTO member_coupons(coupon_id,member_id,issued_at) SELECT ?,id,? FROM member_accounts WHERE is_active=1',(cid,today))
+            elif target=='one':
+                username=request.form.get('member_login_id','').strip()
+                cur=conn.execute('INSERT OR IGNORE INTO member_coupons(coupon_id,member_id,issued_at) SELECT ?,id,? FROM member_accounts WHERE is_active=1 AND login_id=? COLLATE NOCASE',(cid,today,username))
+            else:
+                conn.close(); flash('발급 대상을 선택해주세요.'); return redirect(url_for('admin_coupons'))
+            n=cur.rowcount; conn.commit(); flash(f'{n}명에게 쿠폰을 발급했습니다. 이미 발급된 회원은 제외됩니다.')
+        elif action=='toggle':
+            try: cid=int(request.form.get('coupon_id','0'))
+            except ValueError: cid=0
+            conn.execute('UPDATE coupon_definitions SET is_active=1-is_active WHERE id=?',(cid,)); conn.commit(); flash('쿠폰 사용 상태를 변경했습니다.')
+        conn.close(); return redirect(url_for('admin_coupons'))
+    coupons=conn.execute("""SELECT c.*,(SELECT COUNT(*) FROM member_coupons m WHERE m.coupon_id=c.id) issued,
+        (SELECT COUNT(*) FROM member_coupons m JOIN reservations r ON r.id=m.reservation_id WHERE m.coupon_id=c.id AND r.payment_status='결제완료') used
+        FROM coupon_definitions c ORDER BY c.id DESC""").fetchall()
+    conn.close(); session.setdefault('coupon_csrf',secrets.token_urlsafe(24)); return render_template('coupons_admin.html',coupons=coupons,today=coupon_today(),csrf_token=session['coupon_csrf'])
+
+
+@app.route('/mypage/coupons')
+@member_required
+def mypage_coupons():
+    member=current_member(); conn=db(); today=coupon_today()
+    rows=conn.execute("""SELECT c.*,mc.issued_at,r.status order_status,r.payment_status, r.order_no,
+         CASE WHEN mc.reservation_id IS NULL OR (r.status='취소' AND r.payment_status!='결제완료' AND COALESCE(r.paid_order_amount,0)=0) THEN 0 ELSE 1 END locked
+         FROM member_coupons mc JOIN coupon_definitions c ON c.id=mc.coupon_id LEFT JOIN reservations r ON r.id=mc.reservation_id
+         WHERE mc.member_id=? ORDER BY mc.id DESC""",(member['id'],)).fetchall()
+    conn.close(); return render_template('coupons_member.html',coupons=rows,today=today)
+
+@app.route('/member/check-id')
+def member_check_id():
+    login_id=request.args.get('id','').strip()
+    if not re.fullmatch(r'[A-Za-z0-9_]{4,20}',login_id):
+        return jsonify(available=False,message='아이디는 영문, 숫자, 밑줄로 4~20자 입력해주세요.')
+    conn=db(); exists=conn.execute('SELECT 1 FROM member_accounts WHERE login_id=? COLLATE NOCASE',(login_id,)).fetchone(); conn.close()
+    return jsonify(available=not bool(exists),message='이미 사용 중인 아이디입니다.' if exists else '사용할 수 있는 아이디입니다.')
 
 
 @app.route('/member/signup', methods=['GET','POST'])
@@ -1757,6 +1909,9 @@ def member_signup():
         return redirect(url_for('mypage'))
     if request.method == 'POST':
         name=request.form.get('name','').strip(); phone=request.form.get('phone','').strip(); phone_key=normalize_phone(phone)
+        login_id=request.form.get('login_id','').strip()
+        if not re.fullmatch(r'[A-Za-z0-9_]{4,20}', login_id):
+            flash('아이디는 영문, 숫자, 밑줄로 4~20자 입력해주세요.'); return render_template('member_signup.html', form=request.form)
         email=request.form.get('email','').strip(); password=request.form.get('password',''); confirm=request.form.get('confirm_password','')
         zipcode=request.form.get('zipcode','').strip(); address1=request.form.get('address1','').strip(); address2=request.form.get('address2','').strip()
         agree_terms=request.form.get('agree_terms')=='1'; agree_privacy=request.form.get('agree_privacy')=='1'
@@ -1769,12 +1924,18 @@ def member_signup():
         if password != confirm:
             flash('비밀번호 확인이 일치하지 않습니다.'); return render_template('member_signup.html', form=request.form)
         conn=db()
+        if conn.execute('SELECT id FROM member_accounts WHERE login_id=? COLLATE NOCASE',(login_id,)).fetchone():
+            conn.close(); flash('이미 사용 중인 아이디입니다.'); return render_template('member_signup.html', form=request.form)
         if conn.execute('SELECT id FROM member_accounts WHERE phone_key=?',(phone_key,)).fetchone():
             conn.close(); flash('이미 가입된 연락처입니다. 로그인해주세요.'); return redirect(url_for('member_login'))
         created=datetime.now().strftime('%Y-%m-%d %H:%M')
-        cur=conn.execute('''INSERT INTO member_accounts(name,phone,phone_key,email,password_hash,zipcode,address1,address2,is_active,created_at)
-                            VALUES(?,?,?,?,?,?,?,?,1,?)''',(name,phone,phone_key,email,generate_password_hash(password),zipcode,address1,address2,created))
+        try:
+            cur=conn.execute('''INSERT INTO member_accounts(name,phone,phone_key,email,password_hash,zipcode,address1,address2,is_active,created_at,login_id)
+                                VALUES(?,?,?,?,?,?,?,?,1,?,?)''',(name,phone,phone_key,email,generate_password_hash(password),zipcode,address1,address2,created,login_id))
+        except sqlite3.IntegrityError:
+            conn.rollback(); conn.close(); flash('이미 사용 중인 아이디 또는 연락처입니다.'); return render_template('member_signup.html',form=request.form)
         member_id=cur.lastrowid
+        issue_signup_coupons(conn,member_id)
         docs=legal_documents_map(conn)
         record_consent(conn,'회원가입_이용약관',docs.get('terms'),member_id=member_id,phone=phone)
         record_consent(conn,'회원가입_개인정보',docs.get('privacy'),member_id=member_id,phone=phone)
@@ -1794,18 +1955,18 @@ def member_login():
         return redirect(url_for('mypage'))
     next_url=request.values.get('next','')
     if request.method == 'POST':
-        phone=request.form.get('phone','').strip(); password=request.form.get('password',''); phone_key=normalize_phone(phone)
-        conn=db(); member=conn.execute('SELECT * FROM member_accounts WHERE phone_key=? AND is_active=1',(phone_key,)).fetchone()
+        login_id=request.form.get('login_id','').strip(); password=request.form.get('password','')
+        conn=db(); member=conn.execute('SELECT * FROM member_accounts WHERE login_id=? COLLATE NOCASE AND is_active=1',(login_id,)).fetchone()
         if not member or not check_password_hash(member['password_hash'],password):
-            conn.close(); flash('연락처 또는 비밀번호가 올바르지 않습니다.'); return render_template('member_login.html', phone=phone, next_url=next_url)
+            conn.close(); flash('아이디 또는 비밀번호가 올바르지 않습니다.'); return render_template('member_login.html', login_id=login_id, next_url=next_url)
         login_at=datetime.now().strftime('%Y-%m-%d %H:%M')
         conn.execute('UPDATE member_accounts SET last_login_at=? WHERE id=?',(login_at,member['id']))
-        conn.execute("UPDATE reservations SET member_id=? WHERE member_id IS NULL AND REPLACE(REPLACE(phone,'-',''),' ','')=?",(member['id'],phone_key))
+        conn.execute("UPDATE reservations SET member_id=? WHERE member_id IS NULL AND REPLACE(REPLACE(phone,'-',''),' ','')=?",(member['id'],member['phone_key']))
         conn.commit(); conn.close()
         session['member_user_id']=member['id']; session.permanent=True
         flash(f'{member["name"]}님, 로그인했습니다.')
         return redirect(safe_member_next_url(next_url))
-    return render_template('member_login.html', phone='', next_url=next_url)
+    return render_template('member_login.html', login_id='', next_url=next_url)
 
 
 @app.route('/member/logout', methods=['POST'])
@@ -1905,6 +2066,8 @@ def mypage_order_change(rid):
     if not order:
         conn.close(); return '주문을 찾을 수 없습니다.',404
     items=conn.execute("SELECT ri.*,p.name,COALESCE(ps.size_name,p.size,'FREE') size_name FROM reservation_items ri JOIN products p ON p.id=ri.product_id LEFT JOIN product_sizes ps ON ps.id=ri.size_id WHERE ri.reservation_id=? ORDER BY ri.id",(rid,)).fetchall()
+    if request.method=='POST' and order['coupon_discount']:
+        conn.close(); flash('쿠폰 적용 주문은 주문 변경이 불가능합니다. 취소 후 다시 주문해주세요.'); return redirect(url_for('mypage_order',rid=rid))
     if order['status']!='예약' or order['shipping_status']!='발송전':
         conn.close(); flash('발송 전 예약 상태의 주문만 변경할 수 있습니다.'); return redirect(url_for('mypage_order',rid=rid))
     if request.method=='POST':
@@ -1935,6 +2098,12 @@ def mypage_order_change(rid):
         else: flash('대여기간을 변경했습니다.')
         return redirect(url_for('mypage_order',rid=rid))
     conn.close(); return render_template('mypage_order_change.html',order=order,items=items,today=date.today().isoformat())
+
+
+@app.route('/admin')
+@app.route('/admin/')
+def admin_entry():
+    return redirect(url_for('dashboard'))
 
 
 @app.route('/admin/login', methods=['GET','POST'])
@@ -2011,7 +2180,7 @@ def home():
     if category:
         selected_category=conn.execute('SELECT * FROM shop_categories WHERE slug=? AND is_active=1',(category,)).fetchone()
         if selected_category:
-            where.append('EXISTS(SELECT 1 FROM product_category_links pcl WHERE pcl.product_id=p.id AND pcl.category_id=?)'); params.append(selected_category['id'])
+            where.append('EXISTS(SELECT 1 FROM product_category_links pcl JOIN shop_categories pc ON pc.id=pcl.category_id WHERE pcl.product_id=p.id AND pc.is_active=1 AND (pc.id=? OR pc.parent_id=?))'); params.extend([selected_category['id'],selected_category['id']])
     where_sql=' AND '.join(where)
     total=conn.execute(f'SELECT COUNT(*) c FROM products p WHERE {where_sql}',params).fetchone()['c']
     total_pages=max(1,(total+per_page-1)//per_page); page=min(page,total_pages)
@@ -2019,14 +2188,26 @@ def home():
         COALESCE((SELECT GROUP_CONCAT(c.name, ', ') FROM product_category_links pcl JOIN shop_categories c ON c.id=pcl.category_id WHERE pcl.product_id=p.id AND c.is_active=1),'') category_names
         FROM products p LEFT JOIN product_sizes ps ON ps.product_id=p.id WHERE {where_sql}
         GROUP BY p.id ORDER BY {sort_sql} LIMIT ? OFFSET ?''',params+[per_page,(page-1)*per_page]).fetchall()
-    categories=conn.execute("SELECT * FROM shop_categories WHERE is_active=1 ORDER BY sort_order,id").fetchall()
-    home_categories=conn.execute("SELECT * FROM shop_categories WHERE is_active=1 AND show_on_home=1 ORDER BY sort_order,id LIMIT 12").fetchall()
+    categories=conn.execute("SELECT c.*, p.name AS parent_name FROM shop_categories c LEFT JOIN shop_categories p ON p.id=c.parent_id WHERE c.is_active=1 AND (c.parent_id IS NULL OR p.is_active=1) ORDER BY COALESCE(p.sort_order,c.sort_order),COALESCE(p.id,c.id),c.parent_id IS NOT NULL,c.sort_order,c.id").fetchall()
+    home_categories=conn.execute("SELECT * FROM shop_categories WHERE is_active=1 AND parent_id IS NULL AND show_on_home=1 ORDER BY sort_order,id LIMIT 12").fetchall()
     banners=active_home_banners(conn)
     best_products=conn.execute("SELECT p.*,COALESCE(SUM(ps.stock),0) total_stock FROM home_product_sections h JOIN products p ON p.id=h.product_id LEFT JOIN product_sizes ps ON ps.product_id=p.id WHERE h.section='BEST' AND p.is_active=1 GROUP BY p.id,h.sort_order ORDER BY h.sort_order,p.id LIMIT 8").fetchall()
     season_products=conn.execute("SELECT p.*,COALESCE(SUM(ps.stock),0) total_stock FROM home_product_sections h JOIN products p ON p.id=h.product_id LEFT JOIN product_sizes ps ON ps.product_id=p.id WHERE h.section='SEASON' AND p.is_active=1 GROUP BY p.id,h.sort_order ORDER BY h.sort_order,p.id LIMIT 8").fetchall()
     conn.close()
     return render_template('home.html',products=products,categories=categories,home_categories=home_categories,banners=banners,best_products=best_products,season_products=season_products,q=q,selected_category=selected_category,sort=sort,page=page,total=total,total_pages=total_pages)
 
+
+
+@app.route('/rental-guide')
+def rental_guide():
+    conn=db()
+    try:
+        fees=get_fees(conn)
+        common_guide=get_text_setting(conn,'common_rental_guide','')
+        cancellation=cancellation_policy_summary(conn)
+    finally:
+        conn.close()
+    return render_template('rental_guide.html',fees=fees,common_guide=common_guide,cancellation=cancellation)
 
 
 @app.route('/product/<int:product_id>')
@@ -2038,7 +2219,7 @@ def product_detail(product_id):
     detail_blocks=conn.execute('SELECT * FROM product_detail_blocks WHERE product_id=? ORDER BY sort_order,id',(product_id,)).fetchall()
     common_rental_guide=get_text_setting(conn,'common_rental_guide') if product['show_common_rental_guide'] else ''
     conn.close()
-    return render_template('product_detail.html',product=product,sizes=sizes,images=images,detail_blocks=detail_blocks,common_rental_guide=common_rental_guide,today=date.today().isoformat())
+    return render_template('product_detail.html',product=product,sizes=sizes,images=images,detail_blocks=detail_blocks,common_rental_guide=common_rental_guide,today=(datetime.now(timezone(timedelta(hours=9))).date()).isoformat())
 
 
 @app.route('/product/<int:product_id>/quick-rent', methods=['POST'])
@@ -2064,6 +2245,8 @@ def product_quick_rent(product_id):
     ps=conn.execute('SELECT * FROM product_sizes WHERE id=? AND product_id=?',(size_id,product_id)).fetchone()
     if not ps or not start or not end or start>end:
         conn.close(); flash('대여기간과 사이즈를 확인해주세요.'); return redirect(url_for('product_detail',product_id=product_id))
+    if not order_cutoff_open(start):
+        conn.close(); flash(ORDER_CUTOFF_MESSAGE); return redirect(url_for('product_detail',product_id=product_id))
     try:
         days=rental_days(start,end)
     except ValueError:
@@ -2128,6 +2311,8 @@ def reserve(product_id):
         if not customer or not phone or not start or not end or start > end or not size_row or not recipient_name or not address1:
             flash('입력 내용을 확인해주세요.')
             conn.close(); return redirect(request.url)
+        if not order_cutoff_open(start):
+            conn.close(); flash(ORDER_CUTOFF_MESSAGE); return redirect(url_for('product_detail',product_id=product_id))
         try:
             days = rental_days(start, end)
         except ValueError:
@@ -2146,6 +2331,8 @@ def reserve(product_id):
         created = datetime.now().strftime('%Y-%m-%d %H:%M')
         start_d = datetime.strptime(start,'%Y-%m-%d').date(); end_d = datetime.strptime(end,'%Y-%m-%d').date()
         dispatch_date, pickup_date = auto_logistics_dates(conn, start, end)
+        if not order_cutoff_open(start):
+            conn.close(); flash(ORDER_CUTOFF_MESSAGE); return redirect(url_for('product_detail',product_id=product_id))
         cur = conn.execute('''INSERT INTO reservations
             (product_id,size_id,order_no,customer_name,phone,start_date,end_date,dispatch_date,pickup_date,qty,rental_days,total_price,status,shipping_status,return_status,memo,created_at,recipient_name,zipcode,address1,address2,shipping_fee,return_shipping_fee,deposit_total,final_amount)
             VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
@@ -2169,6 +2356,7 @@ def reserve(product_id):
 def availability(size_id):
     start, end = request.args.get('start'), request.args.get('end')
     if not start or not end: return jsonify({'available': 0})
+    if not order_cutoff_open(start): return jsonify({'available':0,'cutoff_closed':True})
     conn = db(); a = available_stock(conn, size_id, start, end); conn.close()
     return jsonify({'available': a})
 
@@ -2189,7 +2377,8 @@ def availability_calendar(size_id):
     for i in range(days):
         d = (first + timedelta(days=i)).isoformat()
         avail = available_stock(conn, size_id, d, d)
-        result.append({'date': d, 'available': avail, 'sold_out': avail <= 0})
+        cutoff_closed=not order_cutoff_open(d)
+        result.append({'date': d, 'available': avail, 'sold_out': avail <= 0 or cutoff_closed,'cutoff_closed':cutoff_closed})
     conn.close(); return jsonify(result)
 
 
@@ -2213,7 +2402,8 @@ def cart_availability_calendar():
             av=available_stock(conn,ps['id'],d,d); spare=av-int(x['qty'])
             min_spare=spare if min_spare is None else min(min_spare,spare)
             if av<int(x['qty']): shortages.append({'name':ps['name'],'size':ps['size_name'],'need':int(x['qty']),'available':av})
-        result.append({'date':d,'available':len(shortages)==0 and len(valid)>0,'shortages':shortages,'min_spare':min_spare if min_spare is not None else 0})
+        cutoff_closed=not order_cutoff_open(d)
+        result.append({'date':d,'available':not cutoff_closed and len(shortages)==0 and len(valid)>0,'cutoff_closed':cutoff_closed,'shortages':shortages,'min_spare':min_spare if min_spare is not None else 0})
     conn.close(); return jsonify(result)
 
 
@@ -2300,6 +2490,8 @@ def checkout():
             conn.close(); flash('대여 날짜를 확인해주세요.'); return redirect(request.url)
         except sqlite3.OperationalError:
             conn.close(); flash('다른 주문이 처리 중입니다. 잠시 후 다시 주문해주세요.'); return redirect(url_for('cart_view'))
+        if not order_cutoff_open(start):
+            conn.rollback(); conn.close(); flash(ORDER_CUTOFF_MESSAGE); return redirect(url_for('cart_view'))
         rt=dt=0; vals=[]
         for x,p,ps in rows:
             av=available_stock(conn,ps['id'],start,end)
@@ -2309,13 +2501,28 @@ def checkout():
                 return redirect(url_for('cart_view'))
             line=rental_line_price(p['daily_price'],p['extra_daily_price'],days,x['qty'])
             dep=p['deposit']*int(x['qty']); rt+=line; dt+=dep; vals.append((x,p,ps,line,dep))
-        fees=get_fees(conn); sf=fees['outbound_shipping_fee']; rf=fees['return_shipping_fee']; final=rt+dt+sf+rf
+        fees=get_fees(conn); sf=fees['outbound_shipping_fee']; rf=fees['return_shipping_fee']
+        discount=0; selected_coupon=None
+        coupon_raw=request.form.get('member_coupon_id','').strip()
+        if coupon_raw:
+            try: coupon_id=int(coupon_raw)
+            except ValueError: coupon_id=0
+            selected_coupon=next((c for c in member_available_coupons(conn,member['id']) if c['member_coupon_id']==coupon_id),None) if member else None
+            if not selected_coupon or not (discount:=coupon_discount_for(selected_coupon,rt)):
+                conn.rollback(); conn.close(); flash('사용할 수 없는 쿠폰이거나 최소 대여금액 조건을 충족하지 않습니다.'); return redirect(request.url)
+        final=rt+dt+sf+rf-discount
+        if final-dt<=0:
+            conn.rollback(); conn.close(); flash('할인 후 결제할 금액이 없어 주문할 수 없습니다.'); return redirect(request.url)
         created=datetime.now().strftime('%Y-%m-%d %H:%M'); dispatch,pickup=auto_logistics_dates(conn,start,end)
         x0,p0,ps0,_,_=vals[0]
         payment_token=secrets.token_urlsafe(24); payment_expires_at=(datetime.now()+timedelta(minutes=30)).strftime('%Y-%m-%d %H:%M')
+        if not order_cutoff_open(start):
+            conn.rollback(); conn.close(); flash(ORDER_CUTOFF_MESSAGE); return redirect(url_for('cart_view'))
         cur=conn.execute('''INSERT INTO reservations(product_id,size_id,order_no,customer_name,phone,start_date,end_date,dispatch_date,pickup_date,qty,rental_days,total_price,status,shipping_status,return_status,memo,created_at,recipient_name,zipcode,address1,address2,shipping_fee,return_shipping_fee,deposit_total,final_amount,payment_status,payment_method,paid_at,order_source,deposit_received,refund_amount,member_id,payment_token,payment_updated_at,payment_expires_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
             (p0['id'],ps0['id'],'',customer,phone,start,end,dispatch,pickup,x0['qty'],days,rt,'예약','발송전','회수전',memo,created,recipient,zipcode,address1,address2,sf,rf,dt,final,'결제대기','','','온라인',0,0,(member['id'] if member else None),payment_token,created,payment_expires_at))
-        rid=cur.lastrowid; ono=order_no(rid,created); conn.execute('UPDATE reservations SET order_no=? WHERE id=?',(ono,rid))
+        rid=cur.lastrowid; ono=order_no(rid,created); conn.execute('UPDATE reservations SET order_no=?,coupon_discount=? WHERE id=?',(ono,discount,rid))
+        if selected_coupon:
+            conn.execute('UPDATE member_coupons SET reservation_id=? WHERE id=? AND member_id=?',(rid,selected_coupon['member_coupon_id'],member['id']))
         for x,p,ps,line,dep in vals:
             conn.execute('INSERT INTO reservation_items(reservation_id,product_id,size_id,qty,daily_price,extra_daily_price,rental_days,total_price,deposit_total) VALUES(?,?,?,?,?,?,?,?,?)',(rid,p['id'],ps['id'],x['qty'],p['daily_price'],p['extra_daily_price'],days,line,dep))
         docs=legal_documents_map(conn); mid=(member['id'] if member else None)
@@ -2337,8 +2544,9 @@ def checkout():
     expected_total=rental_total+deposit_total+fees['outbound_shipping_fee']+fees['return_shipping_fee']
     cancel_policy_summary=cancellation_policy_summary(conn)
     docs=legal_documents_map(conn)
+    coupons=member_available_coupons(conn,member['id']) if member else []
     conn.close()
-    return render_template('checkout.html',rows=rows,today=date.today().isoformat(),fees=fees,selected_start=selected_start,selected_end=selected_end,selected_days=selected_days,direct_mode=direct_mode,rental_total=rental_total,deposit_total=deposit_total,expected_total=expected_total,member=member,cancel_policy_summary=cancel_policy_summary,docs=docs)
+    return render_template('checkout.html',rows=rows,today=date.today().isoformat(),fees=fees,selected_start=selected_start,selected_end=selected_end,selected_days=selected_days,direct_mode=direct_mode,rental_total=rental_total,deposit_total=deposit_total,expected_total=expected_total,member=member,cancel_policy_summary=cancel_policy_summary,docs=docs,coupons=coupons)
 
 
 PAYMENT_METHODS = ['신용/체크카드','계좌이체','카카오페이','네이버페이','토스페이']
@@ -2844,7 +3052,7 @@ def order_cancel():
 def admin_home_content():
     conn=db()
     banners=conn.execute('SELECT * FROM home_banners ORDER BY sort_order,id').fetchall()
-    categories=conn.execute("SELECT c.*,COUNT(pcl.product_id) product_count FROM shop_categories c LEFT JOIN product_category_links pcl ON pcl.category_id=c.id GROUP BY c.id ORDER BY c.sort_order,c.id").fetchall()
+    categories=conn.execute("SELECT c.*,p.name parent_name,COUNT(pcl.product_id) product_count FROM shop_categories c LEFT JOIN shop_categories p ON p.id=c.parent_id LEFT JOIN product_category_links pcl ON pcl.category_id=c.id GROUP BY c.id ORDER BY COALESCE(p.sort_order,c.sort_order),COALESCE(p.id,c.id),c.parent_id IS NOT NULL,c.sort_order,c.id").fetchall()
     products=conn.execute("SELECT id,name,image_filename,is_active FROM products ORDER BY name").fetchall()
     best_ids={r['product_id'] for r in conn.execute("SELECT product_id FROM home_product_sections WHERE section='BEST'").fetchall()}
     season_ids={r['product_id'] for r in conn.execute("SELECT product_id FROM home_product_sections WHERE section='SEASON'").fetchall()}
@@ -2882,11 +3090,18 @@ def admin_category_save():
     exists=conn.execute('SELECT id FROM shop_categories WHERE name=? AND id<>?',(name,cid)).fetchone()
     if exists: conn.close(); flash('같은 이름의 카테고리가 이미 있습니다.'); return redirect(url_for('admin_home_content'))
     current=conn.execute('SELECT * FROM shop_categories WHERE id=?',(cid,)).fetchone() if cid else None
+    try: parent_id=int(request.form.get('parent_id') or 0) or None
+    except ValueError:
+        conn.close(); flash('상위 카테고리를 확인해주세요.'); return redirect(url_for('admin_home_content'))
+    if parent_id:
+        parent=conn.execute('SELECT id,parent_id FROM shop_categories WHERE id=?',(parent_id,)).fetchone()
+        if not parent or parent['parent_id'] or parent_id==cid or (cid and conn.execute('SELECT 1 FROM shop_categories WHERE parent_id=?',(cid,)).fetchone()):
+            conn.close(); flash('상위 카테고리 설정을 확인해주세요. 하위 카테고리는 한 단계까지 가능합니다.'); return redirect(url_for('admin_home_content'))
     image=save_image(request.files.get('image')) or (current['image_filename'] if current else '')
-    slug=unique_category_slug(conn,name,cid or None)
-    values=(name,slug,image,sort_order,1 if request.form.get('show_on_home')=='1' else 0,1 if request.form.get('is_active')=='1' else 0)
-    if current: conn.execute('UPDATE shop_categories SET name=?,slug=?,image_filename=?,sort_order=?,show_on_home=?,is_active=? WHERE id=?',values+(cid,))
-    else: conn.execute('INSERT INTO shop_categories(name,slug,image_filename,sort_order,show_on_home,is_active,created_at) VALUES(?,?,?,?,?,?,?)',values+(datetime.now().strftime('%Y-%m-%d %H:%M'),))
+    slug=current['slug'] if current else unique_category_slug(conn,name)
+    values=(name,slug,image,sort_order,1 if request.form.get('show_on_home')=='1' else 0,1 if request.form.get('is_active')=='1' else 0,parent_id)
+    if current: conn.execute('UPDATE shop_categories SET name=?,slug=?,image_filename=?,sort_order=?,show_on_home=?,is_active=?,parent_id=? WHERE id=?',values+(cid,))
+    else: conn.execute('INSERT INTO shop_categories(name,slug,image_filename,sort_order,show_on_home,is_active,parent_id,created_at) VALUES(?,?,?,?,?,?,?,?)',values+(datetime.now().strftime('%Y-%m-%d %H:%M'),))
     # 대표 카테고리 문자열도 새 이름과 동기화
     if current and current['name']!=name:
         conn.execute("UPDATE products SET category=? WHERE category=?",(name,current['name']))
@@ -2896,6 +3111,8 @@ def admin_category_save():
 def admin_category_delete(cid):
     conn=db(); c=conn.execute('SELECT * FROM shop_categories WHERE id=?',(cid,)).fetchone()
     if c:
+        if conn.execute('SELECT 1 FROM shop_categories WHERE parent_id=?',(cid,)).fetchone():
+            conn.close(); flash('하위 카테고리를 먼저 삭제하거나 다른 상위 카테고리로 이동해주세요.'); return redirect(url_for('admin_home_content'))
         affected=[r['product_id'] for r in conn.execute('SELECT product_id FROM product_category_links WHERE category_id=?',(cid,)).fetchall()]
         conn.execute('DELETE FROM product_category_links WHERE category_id=?',(cid,)); conn.execute('DELETE FROM shop_categories WHERE id=?',(cid,))
         for pid in affected:
@@ -2941,8 +3158,8 @@ def products_admin():
         try: category_id=int(category)
         except ValueError: category_id=0
         if category_id:
-            where.append('EXISTS(SELECT 1 FROM product_category_links pcl WHERE pcl.product_id=p.id AND pcl.category_id=?)')
-            params.append(category_id)
+            where.append('EXISTS(SELECT 1 FROM product_category_links pcl JOIN shop_categories pc ON pc.id=pcl.category_id WHERE pcl.product_id=p.id AND (pc.id=? OR pc.parent_id=?))')
+            params.extend([category_id,category_id])
     if status == 'active': where.append('p.is_active=1')
     elif status == 'inactive': where.append('p.is_active=0')
     where_sql=' AND '.join(where)
@@ -2960,7 +3177,7 @@ def products_admin():
         GROUP BY p.id ORDER BY {sort_sql}
         LIMIT ? OFFSET ?
     ''', params + [per_page,(page-1)*per_page]).fetchall()
-    categories = conn.execute("SELECT * FROM shop_categories WHERE is_active=1 ORDER BY sort_order,id").fetchall()
+    categories = conn.execute("SELECT c.*, p.name AS parent_name FROM shop_categories c LEFT JOIN shop_categories p ON p.id=c.parent_id WHERE c.is_active=1 AND (c.parent_id IS NULL OR p.is_active=1) ORDER BY COALESCE(p.sort_order,c.sort_order),COALESCE(p.id,c.id),c.parent_id IS NOT NULL,c.sort_order,c.id").fetchall()
     conn.close()
     return render_template('products.html', products=products, categories=categories, q=q, selected_category=category, selected_status=status, sort=sort, page=page, total=total, total_pages=total_pages)
 
@@ -2968,7 +3185,7 @@ def products_admin():
 @app.route('/admin/products/new', methods=['GET','POST'])
 def new_product():
     conn = db()
-    categories = conn.execute("SELECT * FROM shop_categories WHERE is_active=1 ORDER BY sort_order,id").fetchall()
+    categories = conn.execute("SELECT c.*, p.name AS parent_name FROM shop_categories c LEFT JOIN shop_categories p ON p.id=c.parent_id WHERE c.is_active=1 AND (c.parent_id IS NULL OR p.is_active=1) ORDER BY COALESCE(p.sort_order,c.sort_order),COALESCE(p.id,c.id),c.parent_id IS NOT NULL,c.sort_order,c.id").fetchall()
     if request.method == 'POST':
         name = request.form.get('name','').strip(); category_ids = request.form.getlist('category_ids')
         try:
@@ -2985,6 +3202,7 @@ def new_product():
         cur = conn.execute('''INSERT INTO products(name,category,size,stock,daily_price,extra_daily_price,deposit,description,image_filename,is_active,components,size_guide,rental_notes,show_common_rental_guide)
                               VALUES(?,?,?,?,?,?,?,?,?,1,?,?,?,?)''', (name,'','',0,daily_price,extra_daily_price,deposit,description,image_filename,components,size_guide,rental_notes,1 if request.form.get('show_common_rental_guide')=='1' else 0))
         pid = cur.lastrowid
+        save_product_seo(conn,pid)
         set_product_categories(conn,pid,category_ids)
         parsed = []
         for item in sizes_raw.split(','):
@@ -3020,7 +3238,7 @@ def new_product():
 @app.route('/admin/products/<int:product_id>/edit', methods=['GET','POST'])
 def edit_product(product_id):
     conn = db(); product, sizes = get_product(conn, product_id)
-    categories=conn.execute("SELECT * FROM shop_categories WHERE is_active=1 ORDER BY sort_order,id").fetchall()
+    categories=conn.execute("SELECT c.*, p.name AS parent_name FROM shop_categories c LEFT JOIN shop_categories p ON p.id=c.parent_id WHERE c.is_active=1 AND (c.parent_id IS NULL OR p.is_active=1) ORDER BY COALESCE(p.sort_order,c.sort_order),COALESCE(p.id,c.id),c.parent_id IS NOT NULL,c.sort_order,c.id").fetchall()
     selected_category_ids={r['category_id'] for r in conn.execute('SELECT category_id FROM product_category_links WHERE product_id=?',(product_id,)).fetchall()}
     if not product: conn.close(); return '상품이 없습니다.', 404
     if request.method == 'POST':
@@ -3033,6 +3251,7 @@ def edit_product(product_id):
             flash('가격을 숫자로 입력해주세요.'); conn.close(); return redirect(request.url)
         conn.execute('UPDATE products SET name=?,daily_price=?,extra_daily_price=?,deposit=?,description=?,components=?,size_guide=?,rental_notes=?,is_active=?,show_common_rental_guide=? WHERE id=?',
                      (name,price,extra_price,deposit,request.form.get('description','').strip(),request.form.get('components','').strip(),request.form.get('size_guide','').strip(),request.form.get('rental_notes','').strip(),1 if request.form.get('is_active')=='1' else 0,1 if request.form.get('show_common_rental_guide')=='1' else 0,product_id))
+        save_product_seo(conn,product_id)
         set_product_categories(conn,product_id,category_ids)
         filename = save_image(request.files.get('image'))
         if filename:
@@ -3251,7 +3470,7 @@ def reservations():
         (SELECT COUNT(*) FROM reservation_items ri WHERE ri.reservation_id=r.id) item_count,
         (SELECT COALESCE(SUM(ri.qty),0) FROM reservation_items ri WHERE ri.reservation_id=r.id) item_qty_total
         FROM reservations r JOIN products p ON p.id=r.product_id LEFT JOIN product_sizes ps ON ps.id=r.size_id
-        WHERE {clause} ORDER BY r.start_date,r.id DESC""",params).fetchall()
+        WHERE {clause} ORDER BY r.created_at DESC,r.id DESC""",params).fetchall()
     conn.close(); return render_template('reservations.html',rows=rows,status=status,shipping=shipping,payment=payment,q=q,task=task,task_label=task_label)
 
 
@@ -3289,6 +3508,8 @@ def reservation_update(rid):
     if ret=='회수완료' and status not in ['취소','반납완료']:
         status='세탁/검수중'
     conn=db(); current=conn.execute('SELECT * FROM reservations WHERE id=?',(rid,)).fetchone()
+    if current and current['coupon_discount'] and current['status']=='취소' and status!='취소':
+        conn.close(); flash('취소된 쿠폰 주문은 복구할 수 없습니다. 새로 주문해주세요.'); return redirect(url_for('reservation_detail',rid=rid))
     paid_at=current['paid_at'] if current else ''
     deposit_received=current['deposit_received'] if current else 0
     refund_amount=current['refund_amount'] if current else 0
@@ -3453,6 +3674,48 @@ def damage_item_delete(rid,item_id):
     sync_damage_totals(conn,rid); conn.commit(); conn.close()
     flash('품목 기록을 삭제하고 정산금액을 다시 계산했습니다.')
     return redirect(url_for('reservation_detail',rid=rid))
+
+
+@app.route('/admin/members')
+def members_admin():
+    q=request.args.get('q','').strip()[:100]
+    state=request.args.get('state','')
+    if state not in ('active','inactive'): state=''
+    try: page=max(1,int(request.args.get('page','1')))
+    except ValueError: page=1
+    where=[]; params=[]
+    if q:
+        where.append('(m.name LIKE ? OR m.phone LIKE ? OR m.phone_key LIKE ? OR m.email LIKE ?)')
+        digits=normalize_phone(q) if re.fullmatch(r'[+0-9\s()\-]+',q) else ''
+        params.extend([f'%{q}%',f'%{q}%',f'%{digits}%' if digits else f'%{q}%',f'%{q}%'])
+    if state: where.append('m.is_active=?'); params.append(1 if state=='active' else 0)
+    clause=' WHERE '+' AND '.join(where) if where else ''
+    conn=db()
+    try:
+        total=conn.execute('SELECT COUNT(*) n FROM member_accounts m'+clause,params).fetchone()['n']
+        per_page=20; pages=max(1,(total+per_page-1)//per_page); page=min(page,pages)
+        rows=conn.execute('''SELECT m.id,m.name,m.phone,m.email,m.is_active,m.created_at,m.last_login_at,
+            (SELECT COUNT(*) FROM reservations r WHERE r.member_id=m.id) AS order_count
+            FROM member_accounts m'''+clause+' ORDER BY m.id DESC LIMIT ? OFFSET ?',params+[per_page,(page-1)*per_page]).fetchall()
+    finally: conn.close()
+    return render_template('members_admin.html',rows=rows,q=q,state=state,total=total,page=page,pages=pages)
+
+
+@app.route('/admin/members/<int:member_id>')
+def member_detail_admin(member_id):
+    try: page=max(1,int(request.args.get('page','1')))
+    except ValueError: page=1
+    conn=db()
+    try:
+        member=conn.execute('''SELECT id,name,phone,email,zipcode,address1,address2,is_active,created_at,last_login_at
+            FROM member_accounts WHERE id=?''',(member_id,)).fetchone()
+        if not member: return '회원을 찾을 수 없습니다.',404
+        total=conn.execute('SELECT COUNT(*) n FROM reservations WHERE member_id=?',(member_id,)).fetchone()['n']
+        per_page=20; pages=max(1,(total+per_page-1)//per_page);page=min(page,pages)
+        orders=conn.execute('''SELECT id,order_no,created_at,start_date,end_date,status,payment_status,final_amount
+            FROM reservations WHERE member_id=? ORDER BY id DESC LIMIT ? OFFSET ?''',(member_id,per_page,(page-1)*per_page)).fetchall()
+    finally: conn.close()
+    return render_template('member_detail_admin.html',member=member,orders=orders,total=total,page=page,pages=pages)
 
 
 @app.route('/admin/customers')
@@ -3788,6 +4051,11 @@ def admin_payment_settings():
 def admin_settings():
     conn = db()
     if request.method == 'POST':
+        public_url=normalize_public_url(request.form.get('seo_public_url',''))
+        if request.form.get('seo_public_url','').strip() and not public_url:
+            conn.close(); flash('대표주소는 https://도메인 형식으로 입력해주세요. 경로는 제외합니다.'); return redirect(request.url)
+        if request.form.get('seo_indexing_enabled')=='1' and not public_url:
+            conn.close(); flash('검색 노출을 허용하려면 정식 대표주소를 먼저 입력해주세요.'); return redirect(request.url)
         try:
             outbound = max(0, int(request.form.get('outbound_shipping_fee','0') or 0))
             ret = max(0, int(request.form.get('return_shipping_fee','0') or 0))
@@ -3814,6 +4082,9 @@ def admin_settings():
         valid_holidays = sorted(parse_holidays(raw_holidays))
         set_setting(conn,'holiday_dates','\n'.join(valid_holidays))
         set_setting(conn,'common_rental_guide',request.form.get('common_rental_guide','').strip())
+        set_setting(conn,'seo_site_name',request.form.get('seo_site_name','').strip()[:80] or '코스데이')
+        set_setting(conn,'seo_public_url',public_url)
+        set_setting(conn,'seo_indexing_enabled',1 if request.form.get('seo_indexing_enabled')=='1' else 0)
         conn.commit(); conn.close(); flash('운영 설정을 저장했습니다. 취소수수료 규정은 저장 즉시 이후 취소 건부터 적용됩니다.')
         return redirect(url_for('admin_settings'))
     settings = get_fees(conn)
@@ -3852,7 +4123,7 @@ def admin_calendar():
     cells=[None]*first.weekday()+[date(first.year,first.month,d) for d in range(1,last.day+1)]
     while len(cells)%7: cells.append(None)
     weeks=[cells[i:i+7] for i in range(0,len(cells),7)]
-    return render_template('calendar.html', first=first, prev_month=prev_month, next_month=next_month, weeks=weeks, summary_by_day=summary_by_day)
+    return render_template('calendar.html', first=first, prev_month=prev_month, next_month=next_month, weeks=weeks, summary_by_day=summary_by_day, today=order_cutoff_now().date())
 
 
 @app.route('/admin/calendar/day')
@@ -3879,6 +4150,8 @@ def reservation_edit(rid):
     r=conn.execute('SELECT * FROM reservations WHERE id=?',(rid,)).fetchone()
     if not r:
         conn.close(); return '주문이 없습니다.',404
+    if request.method=='POST' and r['coupon_discount']:
+        conn.close(); flash('쿠폰 적용 주문의 금액 변경은 지원하지 않습니다.'); return redirect(url_for('reservation_detail',rid=rid))
     items=conn.execute("SELECT ri.*,p.name,p.image_filename,COALESCE(ps.size_name,p.size,'FREE') size_name FROM reservation_items ri JOIN products p ON p.id=ri.product_id LEFT JOIN product_sizes ps ON ps.id=ri.size_id WHERE ri.reservation_id=? ORDER BY ri.id",(rid,)).fetchall()
     if request.method=='POST':
         customer=request.form.get('customer_name','').strip(); phone=request.form.get('phone','').strip()
@@ -3934,6 +4207,8 @@ def order_change():
     if not r:
         conn.close(); flash('주문을 찾지 못했습니다.'); return redirect(url_for('order_lookup'))
     items=conn.execute("SELECT ri.*,p.name,COALESCE(ps.size_name,p.size,'FREE') size_name FROM reservation_items ri JOIN products p ON p.id=ri.product_id LEFT JOIN product_sizes ps ON ps.id=ri.size_id WHERE ri.reservation_id=? ORDER BY ri.id",(r['id'],)).fetchall()
+    if request.method=='POST' and r['coupon_discount']:
+        conn.close(); flash('쿠폰 적용 주문은 변경할 수 없습니다.'); return redirect(url_for('order_lookup',order_no=ono,phone=phone))
     if r['status']!='예약' or r['shipping_status']!='발송전':
         conn.close(); flash('발송 전 예약 상태의 주문만 고객이 직접 변경할 수 있습니다.'); return redirect(url_for('order_lookup',order_no=ono,phone=phone))
     if request.method=='POST':
@@ -3967,6 +4242,129 @@ def order_change():
         else: flash('예약 내용을 변경했습니다.')
         return redirect(url_for('order_lookup',order_no=ono,phone=phone))
     conn.close(); return render_template('order_change.html',r=r,items=items,today=date.today().isoformat())
+
+
+# SEO metadata and launch preparation. Indexing remains off until explicitly enabled.
+def normalize_public_url(value):
+    value=value.strip().rstrip('/')
+    if not value: return ''
+    try:
+        parts=urllib.parse.urlsplit(value)
+        host=parts.hostname or ''
+        if (parts.scheme!='https' or not host or '.' not in host or host in {'localhost','127.0.0.1'}
+                or parts.username or parts.password or parts.path or parts.query or parts.fragment
+                or parts.port not in (None,443)):
+            return ''
+        ascii_host=host.lower().encode('idna').decode('ascii')
+        if len(ascii_host)>253 or any(not re.fullmatch(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?',label) for label in ascii_host.split('.')):
+            return ''
+        return 'https://'+ascii_host
+    except (ValueError, UnicodeError):
+        return ''
+
+
+def save_product_seo(conn,product_id):
+    # Preserve older forms that do not submit these fields.
+    for field,limit in (('seo_title',200),('seo_description',500),('image_alt',200)):
+        if field in request.form:
+            value=' '.join(request.form.get(field,'').split())[:limit]
+            conn.execute(f'UPDATE products SET {field}=? WHERE id=?',(value,product_id))
+
+
+def seo_config():
+    if hasattr(g,'seo_config'): return g.seo_config
+    conn=db()
+    try:
+        config={'site_name':get_text_setting(conn,'seo_site_name','코스데이'),
+                'public_url':normalize_public_url(get_text_setting(conn,'seo_public_url','')),
+                'enabled':get_setting(conn,'seo_indexing_enabled',0)==1}
+    finally: conn.close()
+    g.seo_config=config
+    return config
+
+
+def seo_live(config):
+    return bool(config['enabled'] and config['public_url'] and
+                request.host.lower()==urllib.parse.urlsplit(config['public_url']).netloc and
+                request.scheme=='https')
+
+
+def seo_page():
+    if hasattr(g,'seo_page'): return g.seo_page
+    config=seo_config(); name=config['site_name']
+    meta={'config':config,'title':'','description':'','canonical':'','image':'','alt':'','indexable':False}
+    conn=db()
+    try:
+        if request.endpoint=='product_detail':
+            product=conn.execute('SELECT * FROM products WHERE id=? AND is_active=1',(request.view_args['product_id'],)).fetchone()
+            if product:
+                meta['title']=product['seo_title'] or f"{product['name']} 대여 | {name}"
+                plain=re.sub(r'<[^>]*>',' ',product['description'] or '')
+                desc=' '.join(plain.split())
+                if not desc: desc=f"{product['name']} 코스튬 대여. 구성품과 사이즈, 대여 가능한 날짜를 확인하세요."
+                meta['description']=product['seo_description'] or desc[:160]
+                meta['alt']=product['image_alt'] or product['name']+' 대여 의상'
+                meta['indexable']=seo_live(config) and not product['is_test']
+                if product['image_filename'] and config['public_url']:
+                    meta['image']=config['public_url']+url_for('uploaded_file',filename=product['image_filename'])
+        elif request.endpoint=='rental_guide':
+            meta['title']='대여가이드 | '+name
+            meta['description']='코스튬 대여 방법과 대여기간, 결제, 배송, 반납 및 보증금 정산 안내를 확인하세요.'
+            meta['indexable']=seo_live(config)
+        elif request.endpoint=='home' and not request.query_string:
+            meta['title']=name+' | 코스튬·졸업사진 의상 대여'
+            meta['description']='졸업사진, 할로윈, 행사와 촬영을 위한 코스튬 대여. 상품별 구성품과 사이즈, 대여 가능 날짜를 확인하세요.'
+            meta['indexable']=seo_live(config)
+    finally: conn.close()
+    if meta['indexable']:
+        meta['canonical']=config['public_url']+request.path
+    g.seo_page=meta
+    return meta
+
+
+@app.context_processor
+def inject_seo():
+    return {'page_seo':seo_page()}
+
+
+@app.after_request
+def seo_headers(response):
+    if request.path.startswith('/admin/members'):
+        response.headers['Cache-Control']='private, no-store'
+    if request.endpoint not in {'static','uploaded_file'}:
+        if response.status_code!=200 or not seo_page()['indexable']:
+            response.headers['X-Robots-Tag']='noindex, nofollow'
+    return response
+
+
+@app.route('/robots.txt')
+def seo_robots():
+    config=seo_config()
+    if not seo_live(config):
+        text='User-agent: *\nDisallow: /\n'
+    else:
+        text='User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /mypage\nDisallow: /member\nDisallow: /checkout\nDisallow: /cart\nDisallow: /payment\nDisallow: /order-\nSitemap: '+config['public_url']+'/sitemap.xml\n'
+    response=app.response_class(text,mimetype='text/plain')
+    response.headers['Cache-Control']='no-store'
+    return response
+
+
+@app.route('/sitemap.xml')
+def seo_sitemap():
+    config=seo_config()
+    root=Element('urlset',xmlns='http://www.sitemaps.org/schemas/sitemap/0.9')
+    if seo_live(config):
+        SubElement(SubElement(root,'url'),'loc').text=config['public_url']+'/'
+        SubElement(SubElement(root,'url'),'loc').text=config['public_url']+url_for('rental_guide')
+        conn=db()
+        try:
+            for row in conn.execute('SELECT id FROM products WHERE is_active=1 AND is_test=0 ORDER BY id'):
+                SubElement(SubElement(root,'url'),'loc').text=config['public_url']+url_for('product_detail',product_id=row['id'])
+        finally: conn.close()
+    response=app.response_class(tostring(root,encoding='utf-8',xml_declaration=True),mimetype='application/xml')
+    response.headers['Cache-Control']='no-store'
+    return response
+
 
 # Gunicorn imports the module instead of executing __main__, so initialize on import.
 seed_persistent_storage()

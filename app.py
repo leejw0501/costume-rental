@@ -2106,6 +2106,44 @@ def admin_entry():
     return redirect(url_for('dashboard'))
 
 
+@app.route('/admin/kpn-review-test')
+def admin_kpn_review_test():
+    if not current_admin():
+        return redirect(url_for('admin_login', next=request.path))
+    from flask import render_template_string
+    return render_template_string("""<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>카드사 심사용 테스트 결제 | 코스데이</title>
+<script src="https://cdn.portone.io/v2/browser-sdk.js"></script>
+<style>body{font-family:system-ui,sans-serif;margin:0;background:#f7f4fb;color:#211a2d}main{max-width:620px;margin:40px auto;padding:28px;background:white;border-radius:16px}label{display:block;margin-top:20px;font-weight:600}input{box-sizing:border-box;width:100%;padding:12px;margin-top:7px;border:1px solid #ccc;border-radius:8px}button{margin-top:24px;padding:14px;border:0;border-radius:8px;background:#6d35ce;color:white;font-size:16px;cursor:pointer;width:100%}.notice{background:#fff3cf;padding:16px;border-radius:8px}#result{white-space:pre-wrap}</style></head>
+<body><main><a href="/admin">← 관리자</a><h1>카드사 심사용 테스트 결제</h1>
+<p class="notice">관리자 전용 테스트 화면입니다. 실제 주문을 생성하거나 결제 완료 처리하지 않습니다. 심사 자료 제출 전 포트원에 이 화면의 사용 가능 여부를 확인해 주세요.</p>
+<label>테스트 상품명<input id="orderName" value="코스데이 의상 대여 테스트" maxlength="80"></label>
+<label>테스트 금액 (원)<input id="amount" type="number" min="100" max="1000000" value="15000"></label>
+<button id="pay" type="button">KPN 테스트 카드 결제창 열기</button><p id="result" role="status"></p>
+<p>결제창에서 하나카드를 선택한 뒤 심사에 필요한 인증 화면을 캡처해 주세요.</p></main>
+<script>
+document.getElementById('pay').addEventListener('click', async () => {
+  const result = document.getElementById('result'), button = document.getElementById('pay');
+  const amount = Number(document.getElementById('amount').value);
+  const name = document.getElementById('orderName').value.trim();
+  if (!name || !Number.isInteger(amount) || amount < 100 || amount > 1000000) { result.textContent = '상품명과 100원~1,000,000원의 금액을 입력해 주세요.'; return; }
+  if (!window.PortOne) { result.textContent = '결제 SDK를 불러오지 못했습니다. 네트워크 연결을 확인해 주세요.'; return; }
+  button.disabled = true;
+  try {
+    const response = await PortOne.requestPayment({
+      storeId: 'store-61a82f43-dc8c-4e20-ba3f-6b8e767c3904',
+      channelKey: 'channel-key-77d12f05-818f-4953-91c4-a0d4b2492144',
+      paymentId: 'review' + crypto.randomUUID().replaceAll('-', ''),
+      orderName: name, totalAmount: amount, currency: 'CURRENCY_KRW', payMethod: 'CARD',
+      redirectUrl: window.location.origin + '/admin/kpn-review-test'
+    });
+    result.textContent = response && response.code ? '결제창 응답: ' + (response.message || response.code) : '결제창이 종료되었습니다. 이 화면은 결제 결과를 검증하거나 실제 주문에 반영하지 않습니다.';
+  } catch (error) { result.textContent = '결제창을 열지 못했습니다. ' + (error.message || '잠시 후 다시 시도해 주세요.'); }
+  finally { button.disabled = false; }
+});
+</script></body></html>""")
+
 @app.route('/admin/login', methods=['GET','POST'])
 def admin_login():
     if current_admin():
